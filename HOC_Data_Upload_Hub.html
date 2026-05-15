@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HOC Data Upload Hub</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0B0E17;--bg2:#111520;--bg3:#161C28;
+  --border:#1E293B;--text:#DDE4F0;--text2:#8899AA;--text3:#4A5570;
+  --green:#22C55E;--red:#EF4444;--amber:#F59E0B;--blue:#3B82F6;
+  --purple:#8B5CF6;--teal:#10B981;--gray-l:#1E293B;
+  --green-l:rgba(34,197,94,.1);--red-l:rgba(239,68,68,.1);
+  --amber-l:rgba(245,158,11,.1);--blue-l:rgba(59,130,246,.1);
+}
+body{font-family:ui-monospace,monospace;background:var(--bg);color:var(--text);font-size:11px;min-height:100vh}
+.topbar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.brand-name{font-size:13px;font-weight:700;color:var(--text)}
+.brand-sub{font-size:9px;color:var(--text3)}
+.logo{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.nav{display:flex;gap:2px;flex:1;overflow-x:auto}
+.nb{padding:5px 12px;border-radius:6px;font:inherit;font-size:10px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--text2);border-bottom:2px solid transparent;white-space:nowrap}
+.nb:hover{color:var(--text);background:rgba(255,255,255,.04)}
+.nb.active{color:var(--blue);border-bottom-color:var(--blue)}
+.badges{display:flex;gap:4px;flex-wrap:wrap}
+.badge{font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap}
+.b-grn{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.25)}
+.b-red{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.25)}
+.b-amb{background:rgba(245,158,11,.12);color:var(--amber);border:1px solid rgba(245,158,11,.25)}
+.b-blu{background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.25)}
+.b-pur{background:rgba(139,92,246,.12);color:var(--purple);border:1px solid rgba(139,92,246,.25)}
+.page{display:none}.page.active{display:block}
+.content{padding:14px 16px;max-width:1400px;margin:0 auto}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.card-title{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:12px}
+.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.kl{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:4px}
+.kv{font-size:22px;font-weight:700;line-height:1;margin-bottom:2px}
+.ks{font-size:9px;color:var(--text3)}
+.sync-bar{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 12px;margin-bottom:10px;font-size:9px;color:var(--text3);display:flex;align-items:center;gap:8px}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:10px}
+th{text-align:left;padding:5px 8px;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:5px 8px;border-bottom:1px solid rgba(30,41,59,.5);vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.02)}
+.t3{color:var(--text3)}
+.t2{color:var(--text2)}
+.btn{padding:5px 14px;border-radius:6px;font:inherit;font-size:10px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--text2)}
+.btn:hover{background:var(--bg2);color:var(--text)}
+.btn-grn{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3);color:var(--green)}
+.btn-blu{background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3);color:var(--blue)}
+.empty-state{text-align:center;padding:40px 20px;color:var(--text3)}
+.empty-icon{font-size:32px;margin-bottom:8px}
+.empty-title{font-size:13px;font-weight:700;color:var(--text2);margin-bottom:4px}
+.empty-sub{font-size:10px}
+input,select,textarea{font-family:ui-monospace,monospace;font-size:10px;background:var(--bg2);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 8px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--blue)}
+.upd-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.upd-label{font-size:9px;font-weight:700;color:var(--text3);min-width:80px;text-transform:uppercase;letter-spacing:.06em}
+.saved-msg{font-size:9px;font-weight:700;color:var(--green);opacity:0;transition:opacity .3s}
+.saved-msg.show{opacity:1}
+
+.logo{background:linear-gradient(135deg,#F59E0B,#EF4444)}
+.nb.active{color:var(--amber);border-bottom-color:var(--amber)}
+.drop-zone{border:2px dashed var(--border);border-radius:12px;padding:30px 20px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg3);margin-bottom:10px}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--blue);background:rgba(59,130,246,.06)}
+.drop-zone.loaded{border-color:var(--green);background:rgba(34,197,94,.06)}
+.drop-icon{font-size:28px;margin-bottom:8px}
+.drop-title{font-size:12px;font-weight:700;margin-bottom:4px}
+.drop-sub{font-size:9px;color:var(--text3)}
+.drop-status{font-size:10px;font-weight:700;margin-top:8px;min-height:16px}
+.zone-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.log-line{font-size:10px;padding:3px 0;border-bottom:1px solid var(--border);color:var(--text2)}
+.log-line.ok{color:var(--green)}
+.log-line.err{color:var(--red)}
+.log-line.info{color:var(--blue)}
+.big-btn{width:100%;padding:14px;border-radius:8px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;border:none;background:var(--blue);color:#fff;margin-bottom:8px}
+.big-btn:hover{background:#2563EB}
+.big-btn:disabled{opacity:.4;cursor:not-allowed}
+.clear-btn{width:100%;padding:8px;border-radius:6px;font:inherit;font-size:10px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--text3)}
+.clear-btn:hover{border-color:var(--red);color:var(--red)}
+.status-bar{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.stat-row{display:flex;justify-content:space-between;align-items:center;font-size:10px;padding:3px 0}
+.stat-val{font-weight:700;color:var(--text)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <a href="index.html" style="display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--text2);text-decoration:none;font-size:9px;font-weight:700;flex-shrink:0">← HOC-OES</a>
+    <div class="logo">DU</div>
+    <div>
+      <div class="brand-name">Data Upload Hub</div>
+      <div class="brand-sub">Drop Excel files → all dashboards update instantly · No embedded data</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <button class="nb active" onclick="P('upload')">Upload Data</button>
+    <button class="nb" onclick="P('status')">Current Data</button>
+    <button class="nb" onclick="P('log')">Upload Log</button>
+  </nav>
+</div>
+
+<!-- UPLOAD PAGE -->
+<div class="page active" id="page-upload"><div class="content">
+  <div class="sync-bar" id="sync-bar"></div>
+
+  <div class="zone-grid">
+    <!-- Production Tracker -->
+    <div>
+      <div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">📊 HOC Production Tracker</div>
+      <div class="drop-zone" id="zone-pt" onclick="document.getElementById('file-pt').click()" ondragover="dragOver(event,'pt')" ondragleave="dragLeave('pt')" ondrop="dropFile(event,'pt')">
+        <input type="file" id="file-pt" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadFile(this.files[0],'pt')">
+        <div class="drop-icon">📋</div>
+        <div class="drop-title">HOC_Production_Tracker.xlsx</div>
+        <div class="drop-sub">CLEAN_ DATA · CAPACITY FORECAST · Goal Source Data · Dashboard</div>
+        <div class="drop-status" id="status-pt" style="color:var(--text3)">Drop file here or click to browse</div>
+      </div>
+    </div>
+
+    <!-- Planning Data -->
+    <div>
+      <div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">📦 Planning Data (Vicinity)</div>
+      <div class="drop-zone" id="zone-pd" onclick="document.getElementById('file-pd').click()" ondragover="dragOver(event,'pd')" ondragleave="dragLeave('pd')" ondrop="dropFile(event,'pd')">
+        <input type="file" id="file-pd" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadFile(this.files[0],'pd')">
+        <div class="drop-icon">🏭</div>
+        <div class="drop-title">Planning_Data.xlsx</div>
+        <div class="drop-sub">Vicinity Interface · Component inventory · POs · MRP</div>
+        <div class="drop-status" id="status-pd" style="color:var(--text3)">Drop file here or click to browse</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="big-btn" id="update-btn" onclick="updateAllDashboards()" disabled>
+    ⚡ Update All Dashboards
+  </button>
+  <button class="clear-btn" onclick="clearAllData()">🗑 Clear All Uploaded Data</button>
+
+  <!-- ── PASTE SCHEDULE ──────────────────────────────────────────── -->
+  <!--    Alternative to file drop: paste cells copied from Excel.
+          Auto-detects Production Tracker (batches) vs Planning Data
+          (Vicinity inventory) based on which column headers are present.
+          Supports a full select-all from the May/June/etc. tab including
+          the KPI rollup at the top — the parser scans for the header row. -->
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">
+      📋 Paste Schedule from Clipboard
+      <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text3);font-size:9px">Alternative to file drop — paste cells copied from web Excel</span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      <button class="nb" id="paste-target-pt"  data-target="pt" style="background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.25);padding:5px 10px;border-radius:6px">📊 Production Schedule</button>
+      <button class="nb" id="paste-target-pd"  data-target="pd" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border)">🏭 Planning Data (Vicinity)</button>
+      <button class="nb" id="paste-target-auto" data-target="auto" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border)">🤖 Auto-detect</button>
+    </div>
+    <textarea id="paste-box" placeholder="In Excel: Ctrl+A to select all on the current month tab, Ctrl+C to copy, then click here and Ctrl+V to paste.
+
+The parser will skip the KPI rollup at the top and find the batch table automatically.
+
+For Planning Data, paste from the 'Vicinity Interface' sheet — same idea, header row anywhere in the paste is fine." style="width:100%;min-height:120px;padding:10px;font-family:ui-monospace,monospace;font-size:10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);resize:vertical;line-height:1.4"></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <button class="nb" onclick="parsePaste()" style="background:var(--blue);color:#fff;padding:6px 14px;border-radius:6px;border:none;font-weight:700;font-size:10px">✓ Load Pasted Data</button>
+      <button class="nb" onclick="document.getElementById('paste-box').value=''" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);font-size:10px">Clear</button>
+      <span id="paste-status" style="font-size:9px;color:var(--text3);margin-left:6px"></span>
+    </div>
+  </div>
+
+  <div id="progress-area" style="margin-top:14px;display:none">
+    <div class="card">
+      <div class="card-title">Processing</div>
+      <div id="progress-lines"></div>
+    </div>
+  </div>
+</div></div>
+
+<!-- STATUS PAGE -->
+<div class="page" id="page-status"><div class="content">
+  <div class="card">
+    <div class="card-title">Current Data in Dashboards</div>
+    <div id="current-status">
+      <div class="empty-state">
+        <div class="empty-icon">📂</div>
+        <div class="empty-title">No data uploaded yet</div>
+        <div class="empty-sub">Upload your Production Tracker and Planning Data files above</div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- LOG PAGE -->
+<div class="page" id="page-log"><div class="content">
+  <div class="card">
+    <div class="card-title">Upload Log <button class="btn" onclick="clearLog()" style="float:right;margin-top:-2px;font-size:9px">Clear Log</button></div>
+    <div id="log-lines" style="max-height:500px;overflow-y:auto">
+      <div class="t3" style="text-align:center;padding:20px">No uploads yet</div>
+    </div>
+  </div>
+</div></div>
+
+<script>
+
+var SYNC_KEY = 'hoc_sync_v1';
+var SUPA_URL = 'https://yemtpvrumqvbrzrpwnyy.supabase.co';
+var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllbXRwdnJ1bXF2YnpyenB3bnl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MTQ0OTMsImV4cCI6MjA5NDA5MDQ5M30.HURBuAARZ-8ioMT60_XnkU_QeOtupPdvEnS0sFc9Ypo';
+
+function syncRead(){try{return JSON.parse(localStorage.getItem(SYNC_KEY)||'{}');}catch(e){return{};}}
+function syncWrite(data){
+  try{
+    var cur=syncRead();
+    var merged=Object.assign({},cur,data,{_ts:new Date().toISOString()});
+    localStorage.setItem(SYNC_KEY,JSON.stringify(merged));
+    supaWrite(merged);
+  }catch(e){}
+}
+function supaWrite(data){
+  try{
+    fetch(SUPA_URL+'/rest/v1/hoc_sync_bus',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify({id:1,data:JSON.stringify(data),updated_at:new Date().toISOString()})
+    }).catch(function(){});
+  }catch(e){}
+}
+function supaRead(cb){
+  try{
+    fetch(SUPA_URL+'/rest/v1/hoc_sync_bus?id=eq.1',{
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
+    }).then(function(r){return r.json();}).then(function(d){
+      if(d&&d[0]&&d[0].data){
+        var parsed=JSON.parse(d[0].data);
+        var cur=syncRead();
+        var ts_remote=new Date(parsed._ts||0);
+        var ts_local=new Date(cur._ts||0);
+        if(ts_remote>ts_local){
+          localStorage.setItem(SYNC_KEY,JSON.stringify(parsed));
+          if(cb)cb(parsed);
+        }
+      }
+    }).catch(function(){});
+  }catch(e){}
+}
+function showPage(id,map){
+  Object.keys(map).forEach(function(k){
+    var el=document.getElementById('page-'+k);
+    if(el)el.classList.toggle('active',k===id);
+    var nb=document.querySelector('.nb[onclick*="\'' + k + '\'"]');
+    if(nb)nb.classList.toggle('active',k===id);
+  });
+}
+function renderSyncBar(el){
+  if(!el)return;
+  var d=syncRead();
+  var ts=d._ts?new Date(d._ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'—';
+  el.innerHTML='<span class="sync-dot"></span>HOC-OES Sync Bus · Last update: '+ts+' · Cross-device sync: 15s';
+}
+function N(n){return typeof n==='number'?n.toLocaleString():(n||'—');}
+function fD(s){if(!s)return'—';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'numeric',day:'numeric'});}catch(e){return s;}}
+function pct(v){return typeof v==='number'?Math.round(v*10)/10+'%':'—';}
+
+
+var DATA_KEY = 'hoc_upload_v1';
+var LOG_KEY  = 'hoc_upload_log_v1';
+var PM = {upload:0,status:1,log:2};
+function P(id){ showPage(id,PM); if(id==='status')renderStatus(); if(id==='log')renderLog(); }
+
+// ═══════════════════════════════════════════════════════════════════
+// OPTION A — Supabase broadcast of parsed schedule payload
+// ═══════════════════════════════════════════════════════════════════
+// Pushes batches/goals/inventory to hoc_schedule table so every
+// tablet sees the schedule after ONE upload on ONE device.
+//
+// REQUIRED SUPABASE TABLE (run once in SQL editor):
+//   create table if not exists hoc_schedule (
+//     id integer primary key,
+//     data text,
+//     updated_at timestamptz
+//   );
+//   -- Allow anon insert/update/select for the pilot:
+//   alter table hoc_schedule enable row level security;
+//   create policy "anon all" on hoc_schedule for all
+//     using (true) with check (true);
+//
+function broadcastSchedule(payload){
+  try{
+    var body = {
+      id: 1,
+      data: JSON.stringify(payload),
+      updated_at: new Date().toISOString()
+    };
+    fetch(SUPA_URL+'/rest/v1/hoc_schedule', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'apikey':SUPA_KEY,
+        'Authorization':'Bearer '+SUPA_KEY,
+        'Prefer':'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify(body)
+    }).then(function(r){
+      if(r && r.ok){ log('ok', 'Broadcast to Supabase ✓ — all tablets will sync within 30s'); }
+      else { log('err', 'Broadcast HTTP ' + (r?r.status:'?') + ' — tablets must re-upload locally'); }
+    }).catch(function(err){
+      log('err', 'Broadcast failed: ' + err.message + ' — tablets must re-upload locally');
+    });
+  }catch(e){
+    log('err', 'Broadcast error: ' + e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// OPTION B — Vicinity OData live-refresh (SCAFFOLD — disabled by default)
+// ═══════════════════════════════════════════════════════════════════
+// Pulls Vicinity inventory directly from the ERP OData feed,
+// eliminating the manual Planning_Data.xlsx export step.
+//
+// TO ENABLE:
+//   1. Verify tablets can reach hoc-dts-svr-025:5555 on the LAN
+//   2. Verify the endpoint returns JSON without a login prompt
+//   3. If CORS blocks the browser, ask IT to add this header on the
+//      Vicinity Web server response:
+//         Access-Control-Allow-Origin: *
+//      (or specific origin of where these HTML files are hosted)
+//   4. Flip OPTION_B_ENABLED to true below and reload.
+//
+var OPTION_B_ENABLED = false;
+var VICINITY_ODATA = 'http://hoc-dts-svr-025:5555/VicinityWeb/odata/HOCVIC/vv_Custom%20Views_Planning_MRP%20Detail?$format=json';
+
+function refreshFromVicinity(){
+  if(!OPTION_B_ENABLED){
+    progress('✗ Live refresh disabled. Set OPTION_B_ENABLED=true after confirming network + CORS.', 'err');
+    return;
+  }
+  var btn = document.getElementById('vic-refresh-btn');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Pulling from Vicinity...'; }
+  document.getElementById('progress-area').style.display = 'block';
+  progress('Fetching live Vicinity feed...');
+
+  fetch(VICINITY_ODATA, {method:'GET', headers:{'Accept':'application/json'}})
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP '+r.status+' from Vicinity Web');
+      return r.json();
+    })
+    .then(function(json){
+      var rows = json.value || json.d && json.d.results || [];
+      progress('✓ Received ' + rows.length.toLocaleString() + ' rows from Vicinity', 'ok');
+      if(!rows.length) throw new Error('Empty payload — check feed URL');
+
+      // Run the same inventory-rollup logic the file path uses
+      var byComp = {};
+      rows.forEach(function(r){
+        var sku = String(r.ComponentId||'').trim();
+        if(!sku) return;
+        if(!byComp[sku]) byComp[sku] = {
+          sku:sku, desc:String(r.ComponentDescription||'').trim(),
+          type:String(r.ComponentType||'').trim(),
+          makebuy:String(r.MakeorBuy||'').trim(),
+          qoh:0, po_qty:0, prod_req:0
+        };
+        var qty = parseFloat(r.Quantity)||0;
+        var src = String(r.SourceType||'').trim();
+        if(src==='QOH') byComp[sku].qoh += qty;
+        else if(src==='Production'||src==='Planned Production') byComp[sku].prod_req += qty;
+        else if(src.indexOf('PO')>=0||src.indexOf('Purchase')>=0||src.indexOf('Order')>=0) byComp[sku].po_qty += qty;
+      });
+      var inventory = Object.values(byComp).map(function(c){
+        var net = c.qoh + c.po_qty - Math.abs(c.prod_req);
+        return Object.assign({}, c, {
+          net: Math.round(net*100)/100,
+          status: net<0?'LOW':'OK',
+          qoh: Math.round(c.qoh*100)/100,
+          po_qty: Math.round(c.po_qty*100)/100,
+          prod_req: Math.round(c.prod_req*100)/100
+        });
+      });
+
+      // Merge with whatever's already in localStorage (preserves batches/goals)
+      var existing = {};
+      try { existing = JSON.parse(localStorage.getItem(DATA_KEY)||'{}'); }catch(e){}
+      existing.inventory = inventory;
+      existing.inventory_ts = new Date().toISOString();
+      existing._updated = new Date().toISOString();
+      existing._source = 'vicinity_odata';
+      localStorage.setItem(DATA_KEY, JSON.stringify(existing));
+
+      var low = inventory.filter(function(i){return i.status==='LOW';});
+      progress('✓ Inventory: ' + inventory.length.toLocaleString() + ' SKUs · ' + low.length + ' LOW', 'ok');
+
+      // Broadcast to all tablets via Supabase
+      broadcastSchedule(existing);
+
+      progress('━━━ LIVE REFRESH COMPLETE ━━━', 'ok');
+      log('ok', 'Vicinity live refresh — ' + inventory.length + ' SKUs · ' + low.length + ' LOW');
+
+      if(btn){
+        btn.textContent = '✓ Live Refresh OK';
+        btn.style.background = 'var(--green)';
+        setTimeout(function(){
+          btn.textContent = '🔄 Refresh from Vicinity';
+          btn.style.background = '';
+          btn.disabled = false;
+        }, 3000);
+      }
+    })
+    .catch(function(err){
+      progress('✗ Vicinity refresh failed: ' + err.message, 'err');
+      log('err', 'Vicinity refresh: ' + err.message);
+      if(btn){ btn.textContent = '🔄 Refresh from Vicinity'; btn.disabled = false; }
+    });
+}
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Drag/drop helpers ─────────────────────────────────────────────────
+function dragOver(e,zone){ e.preventDefault(); document.getElementById('zone-'+zone).classList.add('drag-over'); }
+function dragLeave(zone){ document.getElementById('zone-'+zone).classList.remove('drag-over'); }
+function dropFile(e,zone){ e.preventDefault(); dragLeave(zone); var f=e.dataTransfer.files[0]; if(f)loadFile(f,zone); }
+
+// ── Loaded file registry ──────────────────────────────────────────────
+var loaded = {pt:null, pd:null};
+
+function loadFile(file, zone) {
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+      loaded[zone] = {wb: wb, name: file.name};
+      var el = document.getElementById('status-'+zone);
+      var zn = document.getElementById('zone-'+zone);
+      el.textContent = '✓ ' + file.name + ' loaded (' + wb.SheetNames.length + ' sheets)';
+      el.style.color = 'var(--green)';
+      zn.classList.add('loaded');
+      log('info', file.name + ' loaded — ' + wb.SheetNames.length + ' sheets');
+      checkReady();
+    } catch(err) {
+      document.getElementById('status-'+zone).textContent = '✗ Error reading file: ' + err.message;
+      document.getElementById('status-'+zone).style.color = 'var(--red)';
+      log('err', 'Error loading ' + file.name + ': ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PASTE FROM CLIPBOARD
+// ═══════════════════════════════════════════════════════════════════
+// Builds a synthetic SheetJS workbook from pasted text so the existing
+// file-drop parser handles it without modification. Supports:
+//   - Production Schedule paste (drop into loaded.pt)
+//   - Planning Data paste (drop into loaded.pd)
+//   - Auto-detect based on which header columns are present
+// Includes graceful handling when the user selects-all on a tab (so the
+// KPI rollup rows above the batch table land in the paste too).
+
+// Track which target the paste should go to
+var PASTE_TARGET = 'pt';
+
+function setPasteTarget(t){
+  PASTE_TARGET = t;
+  ['pt','pd','auto'].forEach(function(k){
+    var b = document.getElementById('paste-target-'+k);
+    if(!b) return;
+    if(k===t){
+      b.style.background    = 'rgba(59,130,246,.12)';
+      b.style.color         = 'var(--blue)';
+      b.style.border        = '1px solid rgba(59,130,246,.25)';
+    } else {
+      b.style.background = '';
+      b.style.color      = '';
+      b.style.border     = '1px solid var(--border)';
+    }
+  });
+}
+
+// Wire the picker buttons (after DOM is ready)
+document.addEventListener('DOMContentLoaded', function(){
+  ['pt','pd','auto'].forEach(function(k){
+    var b = document.getElementById('paste-target-'+k);
+    if(b) b.addEventListener('click', function(){ setPasteTarget(k); });
+  });
+});
+
+// Heuristic detector — figures out whether pasted rows look like a
+// schedule (has 'Batch' header + MAIN* values) or Vicinity inventory
+// (has 'ComponentId' and 'SourceType' headers).
+function detectPasteType(rows){
+  // Scan first 30 rows for header signatures
+  for(var ri=0; ri<Math.min(30, rows.length); ri++){
+    var row = rows[ri] || [];
+    var has = function(label){
+      for(var c=0; c<row.length; c++){
+        if(String(row[c]||'').trim() === label) return true;
+      }
+      return false;
+    };
+    if(has('Batch') && has('Date') && has('Line')) return 'pt';
+    if(has('ComponentId') && has('SourceType'))    return 'pd';
+  }
+  return null;
+}
+
+function parsePaste(){
+  var raw = document.getElementById('paste-box').value;
+  var statusEl = document.getElementById('paste-status');
+  statusEl.style.color = 'var(--text3)';
+
+  if(!raw || !raw.trim()){
+    statusEl.textContent = 'Paste area is empty.';
+    statusEl.style.color = 'var(--amber)';
+    return;
+  }
+
+  // Split into rows. Web Excel copy uses \r\n on Windows, \n on Mac,
+  // and the very last line is often empty.
+  var lines = raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  while(lines.length && !lines[lines.length-1].trim()) lines.pop();
+
+  if(lines.length < 2){
+    statusEl.textContent = 'Need at least a header row plus one data row.';
+    statusEl.style.color = 'var(--amber)';
+    return;
+  }
+
+  // Excel copy uses tab between cells. CSV-style paste (commas) works too
+  // as a fallback only if tabs are absent.
+  var sep = lines[0].indexOf('\t') >= 0 ? '\t' : ',';
+  var rows = lines.map(function(ln){ return ln.split(sep); });
+
+  // Auto-detect or use the chosen target
+  var target = PASTE_TARGET;
+  if(target === 'auto'){
+    target = detectPasteType(rows);
+    if(!target){
+      statusEl.textContent = '✗ Could not auto-detect — pick Production Schedule or Planning Data above.';
+      statusEl.style.color = 'var(--red)';
+      return;
+    }
+  }
+
+  // Build a synthetic workbook so the file-drop parser handles it unchanged.
+  // For Production Schedule, name the sheet after the current month so the
+  // parser's monthly-master path picks it up automatically. The header-row
+  // detection inside the parser then finds the actual header line inside.
+  var sheetName;
+  if(target === 'pt'){
+    var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var d = new Date();
+    sheetName = monthNames[d.getMonth()] + ' ' + d.getFullYear();
+  } else {
+    sheetName = 'Vicinity Interface';
+  }
+
+  try {
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+    loaded[target] = {wb: wb, name: '(pasted) ' + sheetName};
+
+    // Update the matching drop-zone visually so the user sees they're loaded
+    var zn = document.getElementById('zone-'+target);
+    var stEl = document.getElementById('status-'+target);
+    if(zn && stEl){
+      zn.classList.add('loaded');
+      stEl.textContent = '✓ Pasted data loaded (' + rows.length.toLocaleString() + ' rows → ' + sheetName + ')';
+      stEl.style.color = 'var(--green)';
+    }
+
+    statusEl.style.color = 'var(--green)';
+    statusEl.textContent = '✓ Loaded ' + rows.length.toLocaleString() + ' rows as ' +
+                           (target==='pt'?'Production Schedule':'Planning Data') +
+                           '. Click "Update All Dashboards" to broadcast.';
+    log('info', 'Paste loaded: ' + rows.length + ' rows → ' + target + ' (' + sheetName + ')');
+    checkReady();
+  } catch(err){
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✗ Parse failed: ' + err.message;
+    log('err', 'Paste parse: ' + err.message);
+  }
+}
+// ═══════════════════════════════════════════════════════════════════
+
+function checkReady() {
+  document.getElementById('update-btn').disabled = !(loaded.pt || loaded.pd);
+}
+
+// ── Main data extraction ──────────────────────────────────────────────
+function updateAllDashboards() {
+  var btn = document.getElementById('update-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Processing...';
+  document.getElementById('progress-area').style.display = 'block';
+  document.getElementById('progress-lines').innerHTML = '';
+
+  setTimeout(function() {
+    try {
+      var result = {};
+      var ts = new Date().toISOString();
+
+      // ── Parse Production Tracker ──────────────────────────────────
+      if(loaded.pt) {
+        progress('Reading Production Tracker...');
+        var wb = loaded.pt.wb;
+
+        // ── Sheet & header-row detection ─────────────────────────────
+        // Supports two formats:
+        //   (a) Legacy: sheet named 'CLEAN_ DATA' (or 'CLEAN_DATA'),
+        //       headers on row 1.
+        //   (b) Monthly master: sheet named like 'May 2026', 'June 2026'...
+        //       Headers on row 12, KPI rollup in rows 1-6.
+        var cleanSheet = null;
+        var headerRow = 1;   // 1-based row index where the header lives
+        var sheetUsed = '';
+
+        // Try legacy first for backward compatibility
+        if(wb.Sheets['CLEAN_ DATA']) { cleanSheet = wb.Sheets['CLEAN_ DATA']; sheetUsed = 'CLEAN_ DATA'; headerRow = 1; }
+        else if(wb.Sheets['CLEAN_DATA']) { cleanSheet = wb.Sheets['CLEAN_DATA']; sheetUsed = 'CLEAN_DATA'; headerRow = 1; }
+
+        // Then try current month (e.g. 'May 2026', 'June 2026'), then prior month
+        if(!cleanSheet) {
+          var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+          var now = new Date();
+          var candidates = [];
+          for(var off = 0; off >= -2; off--) {
+            var m = new Date(now.getFullYear(), now.getMonth()+off, 1);
+            var name = monthNames[m.getMonth()] + ' ' + m.getFullYear();
+            candidates.push(name);
+            candidates.push(' ' + name);          // ' May 2024' style
+            candidates.push(name + ' ');          // 'June 2025 ' style
+          }
+          for(var i=0;i<candidates.length;i++){
+            if(wb.Sheets[candidates[i]]){
+              cleanSheet = wb.Sheets[candidates[i]];
+              sheetUsed = candidates[i];
+              break;
+            }
+          }
+        }
+
+        // Last resort: scan all sheets for one whose first ~20 rows
+        // contain a 'Batch' header cell with MAIN* values below it.
+        if(!cleanSheet) {
+          var allNames = wb.SheetNames || Object.keys(wb.Sheets);
+          for(var si=0; si<allNames.length; si++){
+            var sn = allNames[si];
+            var sh = wb.Sheets[sn];
+            if(!sh) continue;
+            var scan = XLSX.utils.sheet_to_json(sh, {header:1, defval:'', range:0});
+            for(var ri=0; ri<Math.min(20, scan.length); ri++){
+              var row = scan[ri]||[];
+              for(var ci=0; ci<row.length; ci++){
+                if(String(row[ci]).trim()==='Batch'){
+                  // verify the next row has a MAIN* value at same column
+                  var next = scan[ri+1]||[];
+                  if(next[ci] && String(next[ci]).trim().indexOf('MAIN')===0){
+                    cleanSheet = sh; sheetUsed = sn; headerRow = ri+1; break;
+                  }
+                }
+              }
+              if(cleanSheet) break;
+            }
+            if(cleanSheet) break;
+          }
+        }
+
+        // For the monthly-master format, find the header row inside the sheet.
+        if(cleanSheet && headerRow===1 && sheetUsed && sheetUsed.indexOf('20')>=0) {
+          var scan2 = XLSX.utils.sheet_to_json(cleanSheet, {header:1, defval:'', range:0});
+          for(var ri2=0; ri2<Math.min(20, scan2.length); ri2++){
+            var row2 = scan2[ri2]||[];
+            if(row2.indexOf('Batch')>=0 && row2.indexOf('Date')>=0){ headerRow = ri2+1; break; }
+          }
+        }
+
+        if(cleanSheet) {
+          // Read using detected header row.
+          var rows;
+          if(headerRow === 1){
+            rows = XLSX.utils.sheet_to_json(cleanSheet, {defval:''});
+          } else {
+            // Read headers from headerRow, then everything below
+            var raw = XLSX.utils.sheet_to_json(cleanSheet, {header:1, defval:'', range:0});
+            var hdr = (raw[headerRow-1]||[]).map(function(h){ return String(h||'').trim(); });
+            rows = [];
+            for(var r=headerRow; r<raw.length; r++){
+              var obj = {};
+              for(var c=0; c<hdr.length; c++){
+                if(hdr[c]) obj[hdr[c]] = raw[r][c];
+              }
+              rows.push(obj);
+            }
+          }
+          var batches = [];
+          rows.forEach(function(r) {
+            var batch = String(r['Batch']||r['BATCH']||'').trim();
+            if(!batch.startsWith('MAIN')) return;
+            var dateVal = r['Date']||r['DATE']||'';
+            var dateStr = '';
+            if(dateVal instanceof Date) {
+              dateStr = dateVal.toISOString().slice(0,10);
+            } else if(typeof dateVal === 'number') {
+              var _d=new Date(Math.round((dateVal-25569)*86400*1000));
+              dateStr=_d.toISOString().slice(0,10);
+            } else if(dateVal && String(dateVal).length>=6) {
+              var _ds=String(dateVal).replace(/^'+|'+$/g,'').trim();
+              if(_ds.length===10&&_ds[4]==='-'){dateStr=_ds;}
+              else if(/^[0-9]{1,2}\//.test(_ds)){
+                var _p=_ds.split('/');
+                dateStr=_p[2].slice(0,4)+'-'+_p[0].padStart(2,'0')+'-'+_p[1].padStart(2,'0');
+              } else {dateStr=_ds.slice(0,10);}
+            }
+            var origqty = parseFloat(r['Orginial Qty- DO  NOT CHANGE']||r['Original Qty']||r['ORIGQTY']||0)||0;
+            var actqty  = parseFloat(r['Actual Qty']||r['ACTQTY']||0)||0;
+            var casepk  = parseInt(r['Case PK']||r['CASEPK']||12)||12;
+
+            // Status: prefer explicit Reason Code (monthly master), then legacy Clean Status,
+            // then derive from completion percentage.
+            var statusRaw = String(
+              r['Reason Code']||r['Clean Status']||r['STATUS']||''
+            ).trim().toUpperCase();
+            // Trim trailing spaces (the monthly master has 'NOT STARTED ')
+            statusRaw = statusRaw.replace(/\s+$/, '');
+            var status = statusRaw;
+            if(!['COMPLETED','RUNNING','NOT STARTED'].includes(status)) {
+              var pc = origqty>0 ? actqty/origqty : 0;
+              status = pc>=0.85?'COMPLETED':pc>0?'RUNNING':'NOT STARTED';
+            }
+
+            // NEW: capture production-loss reason fields from monthly master
+            var reason_code = String(r['Reason Code']||'').trim();
+            var reason_desc = String(r['Reason Description']||'').trim();
+            var purchasing_eta = (function(v){
+              if(!v) return '';
+              if(v instanceof Date) return v.toISOString().slice(0,10);
+              if(typeof v === 'number'){ var _d=new Date(Math.round((v-25569)*86400*1000)); return _d.toISOString().slice(0,10); }
+              return String(v).trim();
+            })(r['Purchasing ETA ']||r['Purchasing ETA']);
+
+            batches.push({
+              batch:   batch,
+              date:    dateStr,
+              batch_date: dateStr,
+              line:    parseInt(String(r['Line']||r['LINE']||0))||0,
+              item:    String(r['Item']||r['ITEM']||'').trim(),
+              desc:    String(r['Description']||r['DESC']||'').trim().slice(0,80),
+              origqty: origqty,
+              actqty:  actqty,
+              casepk:  casepk,
+              planea:  origqty*casepk,
+              actualea:actqty*casepk,
+              minutes: parseFloat(r['Minutes']||r['STD MIN']||0)||0,
+              status:  status,
+              pct_comp:origqty>0?Math.min(100,Math.round(actqty/origqty*100)):0,
+              yield_pct:origqty>0?Math.round(actqty/origqty*1000)/10:0,
+              cmpd:    String(r['Compound_Status']||'').trim(),
+              cmpd_status: String(r['Compound_Status']||'').trim(),
+              risk:    String(r['Production_Risk_Flag']||'').trim(),
+              cmpddue: (function(v){var s=String(v||'').replace(/^'+|'+$/g,'').trim();if(s.length===10&&s[4]==='-')return s;if(/^[0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4}$/.test(s)){var p=s.split('/');return p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0');}return s;})(r['Compound_Due_By']),
+              shortage:parseFloat(r['Formula_Shortage']||0)||0,
+              std_hc:  parseFloat(r['Std Headcount']||6)||6,
+              std_speed:parseFloat(r['Std Speed']||50)||50,
+              plan_labor:parseFloat(r['Planned Labor Hrs']||0)||0,
+              fg_status:status,
+              var_pct: 0,
+              case_var:actqty-origqty,
+              rem_min: 0,
+              cum_min: 0,
+              std_min: parseFloat(r['Minutes']||0)||0,
+              lbs:     origqty,
+              formula: String(r['Item']||'').trim(),
+              fname:   String(r['Description']||'').trim().slice(0,80),
+              // NEW fields from monthly master:
+              reason_code:    reason_code,
+              reason_desc:    reason_desc,
+              product_type:   String(r['Product Type']||'').trim(),
+              purchasing_eta: purchasing_eta,
+            });
+          });
+          result.batches = batches;
+          result.batches_ts = ts;
+          result.batches_source_sheet = sheetUsed;
+          progress('✓ ' + sheetUsed + ': ' + batches.length + ' batches', 'ok');
+        }
+
+        // ── KPI fallback: if no Goal Source Data sheet, derive from
+        //    the monthly master's rows 1-6 rollup.
+        if(!wb.Sheets['Goal Source Data'] && cleanSheet) {
+          var rawAll = XLSX.utils.sheet_to_json(cleanSheet, {header:1, defval:'', range:0});
+          // Row 3 = Scheduled, Row 4 = Completed (1-based; 0-indexed: 2 and 3)
+          var sched = rawAll[2]||[];
+          var done  = rawAll[3]||[];
+          // Column 4 (0-indexed 3) is Total # of Planned Cases
+          // Column 7 (0-indexed 6) is Total # of Completed Cases
+          var planCases = parseFloat(sched[3])||0;
+          var doneCases = parseFloat(done[6])||0;
+          if(planCases > 0 || doneCases > 0){
+            result.goals = result.goals || {may_actual:0, may_goal:0, may_bal:0, oee_act:0, oee_goal:60, att_act:0, att_goal:90, oee_by_line:{}, att_by_line:{}};
+            result.goals.may_actual = Math.round(doneCases);
+            result.goals.may_goal   = Math.round(planCases);
+            result.goals.may_bal    = Math.round(planCases - doneCases);
+            result.goals_ts = ts;
+            result.goals_source = 'monthly_master_rollup';
+            progress('✓ KPIs (from monthly rollup): actual=' + result.goals.may_actual.toLocaleString() + ' goal=' + result.goals.may_goal.toLocaleString(), 'ok');
+          }
+        }
+
+        // 2. Goal Source Data → goals (legacy format)
+        var goalSheet = wb.Sheets['Goal Source Data'];
+        if(goalSheet) {
+          var grows = XLSX.utils.sheet_to_json(goalSheet, {header:1, defval:''});
+          var goals = {may_actual:0, may_goal:0, may_bal:0, oee_act:0, oee_goal:60, att_act:0, att_goal:90, oee_by_line:{}, att_by_line:{}};
+          var in_monthly = false;
+          grows.forEach(function(row) {
+            if(!row[0]) return;
+            var label = String(row[0]).trim();
+            if(label.includes('MONTHLY')) { in_monthly=true; return; }
+            if(in_monthly && label==='May') {
+              goals.may_actual = parseInt(parseFloat(row[1]||0))||0;
+              goals.may_goal   = parseInt(parseFloat(row[2]||0))||0;
+              goals.may_bal    = parseInt(parseFloat(row[3]||0))||0;
+            }
+            // OEE by line
+            var lineNum = parseInt(label);
+            if(!isNaN(lineNum) && lineNum>0 && lineNum<15) {
+              if(row[1]) goals.oee_by_line[lineNum] = Math.round(parseFloat(row[1]||0)*1000)/10;
+              if(row[4]) goals.att_by_line[lineNum] = Math.round(parseFloat(row[4]||0)*1000)/10;
+            }
+          });
+          result.goals = goals;
+          result.goals_ts = ts;
+          progress('✓ Goals: actual=' + goals.may_actual.toLocaleString() + ' goal=' + goals.may_goal.toLocaleString(), 'ok');
+        }
+
+        // 3. Production Goals Dashboard → OEE/Attainment
+        var pgdSheet = wb.Sheets['Production Goals Dashboard'];
+        if(pgdSheet && result.goals) {
+          var pgrows = XLSX.utils.sheet_to_json(pgdSheet, {header:1, defval:''});
+          pgrows.forEach(function(row) {
+            var label = String(row[0]||'').trim();
+            if(label==='May') {
+              if(row[1]) result.goals.oee_act  = Math.round(parseFloat(row[1]||0)*1000)/10;
+              if(row[6]) result.goals.att_act  = Math.round(parseFloat(row[6]||0)*1000)/10;
+            }
+            if(label==='Remaining Days' && row[7]) result.goals.remaining_days = parseInt(row[7])||17;
+          });
+        }
+
+        // 4. Dashboard sheet → capacity metrics
+        var dashSheet = wb.Sheets['Dashboard'];
+        if(dashSheet) {
+          var drows = XLSX.utils.sheet_to_json(dashSheet, {header:1, defval:''});
+          var capacity = {};
+          drows.forEach(function(row) {
+            var label = String(row[0]||'').trim();
+            if(label==='Low Yield Batches') capacity.low_yield = parseInt(row[1])||0;
+            if(label==='Overfill Batches')  capacity.overfill  = parseInt(row[1])||0;
+            if(label==='Total Remaining Hours') capacity.rem_hrs = parseFloat(row[1])||0;
+            if(label==='Total Available Hours') capacity.avail_hrs = parseFloat(row[1])||0;
+          });
+          result.capacity = capacity;
+          progress('✓ Capacity metrics loaded', 'ok');
+        }
+      }
+
+      // ── Parse Planning Data ───────────────────────────────────────
+      if(loaded.pd) {
+        progress('Reading Planning Data (Vicinity)...');
+        var wb2 = loaded.pd.wb;
+        var vicSheet = wb2.Sheets['Vicinity Interface'] || wb2.Sheets['Vicinity Interface Mirror'];
+        if(vicSheet) {
+          var vrows = XLSX.utils.sheet_to_json(vicSheet, {defval:''});
+          var byComp = {};
+          vrows.forEach(function(r) {
+            var sku = String(r['ComponentId']||'').trim();
+            if(!sku) return;
+            if(!byComp[sku]) byComp[sku] = {sku:sku, descr:String(r['ComponentDescription']||'').trim().slice(0,60), qoh:0, prod_req:0, po_qty:0};
+            var qty = parseFloat(r['Quantity']||0)||0;
+            var src = String(r['SourceType']||'').trim();
+            if(src==='QOH') byComp[sku].qoh += qty;
+            else if(src==='Production'||src==='Planned Production') byComp[sku].prod_req += qty;
+            else if(src.includes('PO')||src.includes('Purchase')||src.includes('Order')) byComp[sku].po_qty += qty;
+          });
+          var inventory = Object.values(byComp).map(function(c) {
+            var net = c.qoh + c.po_qty - Math.abs(c.prod_req);
+            return Object.assign({}, c, {
+              net: Math.round(net*100)/100,
+              status: net < 0 ? 'LOW' : 'OK',
+              qoh: Math.round(c.qoh*100)/100,
+              po_qty: Math.round(c.po_qty*100)/100,
+              prod_req: Math.round(c.prod_req*100)/100
+            });
+          });
+          result.inventory = inventory;
+          result.inventory_ts = ts;
+          var low = inventory.filter(function(i){return i.status==='LOW';});
+          progress('✓ Vicinity: ' + inventory.length.toLocaleString() + ' SKUs · ' + low.length + ' LOW', 'ok');
+        }
+      }
+
+      // ── Write to localStorage ─────────────────────────────────────
+      result._updated = ts;
+      localStorage.setItem(DATA_KEY, JSON.stringify(result));
+
+      // ── Broadcast parsed payload to Supabase (Option A fix) ───────
+      // All other dashboards poll hoc_schedule on load and every 30s.
+      // One upload here → all tablets see the same schedule.
+      broadcastSchedule(result);
+
+      // ── Summary ───────────────────────────────────────────────────
+      var batches = result.batches||[];
+      var comp=batches.filter(function(b){return b.status==='COMPLETED';}).length;
+      var run=batches.filter(function(b){return b.status==='RUNNING';}).length;
+      var ns=batches.filter(function(b){return b.status==='NOT STARTED';}).length;
+      var goals = result.goals||{};
+      progress('', 'ok');
+      progress('━━━ UPDATE COMPLETE ━━━', 'ok');
+      progress('Batches loaded: ' + batches.length + ' (C:'+comp+' R:'+run+' NS:'+ns+')', 'ok');
+      if(goals.may_actual) progress('May Cases: ' + goals.may_actual.toLocaleString() + ' actual / ' + goals.may_goal.toLocaleString() + ' goal', 'ok');
+      if(result.inventory) progress('Inventory: ' + result.inventory.length.toLocaleString() + ' SKUs · ' + result.inventory.filter(function(i){return i.status==='LOW';}).length + ' LOW', 'ok');
+      progress('All dashboards on every device will update within 30s ✓', 'ok');
+
+      log('ok', 'Upload complete — ' + batches.length + ' batches · ' + (result.inventory||[]).length + ' inventory items');
+
+      btn.textContent = '✓ All Dashboards Updated';
+      btn.style.background = 'var(--green)';
+      setTimeout(function(){
+        btn.textContent = '⚡ Update All Dashboards';
+        btn.style.background = '';
+        btn.disabled = false;
+      }, 3000);
+
+    } catch(err) {
+      progress('✗ Error: ' + err.message, 'err');
+      log('err', 'Upload failed: ' + err.message);
+      btn.textContent = '⚡ Update All Dashboards';
+      btn.disabled = false;
+    }
+  }, 50);
+}
+
+function progress(msg, type) {
+  if(!msg) { document.getElementById('progress-lines').innerHTML += '<br>'; return; }
+  var el = document.createElement('div');
+  el.className = 'log-line ' + (type||'');
+  el.textContent = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'}) + ' ' + msg;
+  document.getElementById('progress-lines').appendChild(el);
+  el.scrollIntoView();
+}
+
+// ── Current Status ────────────────────────────────────────────────────
+function renderStatus() {
+  var stored = {};
+  try { stored = JSON.parse(localStorage.getItem(DATA_KEY)||'{}'); } catch(e){}
+  var el = document.getElementById('current-status');
+  if(!stored._updated) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📂</div><div class="empty-title">No data uploaded yet</div></div>';
+    return;
+  }
+  var batches = stored.batches||[];
+  var goals = stored.goals||{};
+  var inv = stored.inventory||[];
+  var comp=batches.filter(function(b){return b.status==='COMPLETED';}).length;
+  var run=batches.filter(function(b){return b.status==='RUNNING';}).length;
+  var ns=batches.filter(function(b){return b.status==='NOT STARTED';}).length;
+  var low=inv.filter(function(i){return i.status==='LOW';}).length;
+  el.innerHTML = [
+    ['Last Updated',   new Date(stored._updated).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})],
+    ['Total Batches',  batches.length],
+    ['COMPLETED',      comp],
+    ['RUNNING',        run],
+    ['NOT STARTED',    ns],
+    ['May Actual Cases', (goals.may_actual||0).toLocaleString()],
+    ['May Goal Cases',   (goals.may_goal||0).toLocaleString()],
+    ['Case Balance',     (goals.may_bal||0).toLocaleString()],
+    ['OEE Actual',       (goals.oee_act||0)+'%'],
+    ['Attainment',       (goals.att_act||0)+'%'],
+    ['Total SKUs',     inv.length.toLocaleString()],
+    ['LOW Inventory',  low],
+  ].map(function(r){
+    return '<div class="stat-row"><span class="t3">'+r[0]+'</span><span class="stat-val">'+r[1]+'</span></div>';
+  }).join('');
+}
+
+// ── Log ───────────────────────────────────────────────────────────────
+function log(type, msg) {
+  var logs = [];
+  try { logs = JSON.parse(localStorage.getItem(LOG_KEY)||'[]'); } catch(e){}
+  logs.unshift({ts:new Date().toISOString(), type:type, msg:msg});
+  if(logs.length>100) logs=logs.slice(0,100);
+  localStorage.setItem(LOG_KEY, JSON.stringify(logs));
+}
+function renderLog() {
+  var logs = [];
+  try { logs = JSON.parse(localStorage.getItem(LOG_KEY)||'[]'); } catch(e){}
+  var el = document.getElementById('log-lines');
+  if(!logs.length) { el.innerHTML='<div class="t3" style="text-align:center;padding:20px">No uploads yet</div>'; return; }
+  el.innerHTML = logs.map(function(l){
+    var t = new Date(l.ts).toLocaleString('en-US',{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit'});
+    return '<div class="log-line '+l.type+'">'+t+' — '+l.msg+'</div>';
+  }).join('');
+}
+function clearLog() {
+  localStorage.removeItem(LOG_KEY);
+  renderLog();
+}
+function clearAllData() {
+  if(!confirm('Clear all uploaded data from all dashboards?')) return;
+  localStorage.removeItem(DATA_KEY);
+  localStorage.removeItem(LOG_KEY);
+  loaded = {pt:null,pd:null};
+  document.getElementById('status-pt').textContent='Drop file here or click to browse';
+  document.getElementById('status-pd').textContent='Drop file here or click to browse';
+  document.getElementById('status-pt').style.color='var(--text3)';
+  document.getElementById('status-pd').style.color='var(--text3)';
+  document.getElementById('zone-pt').classList.remove('loaded');
+  document.getElementById('zone-pd').classList.remove('loaded');
+  document.getElementById('update-btn').disabled=true;
+  document.getElementById('progress-area').style.display='none';
+  alert('All data cleared. Dashboards will show empty state until next upload.');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+renderSyncBar(document.getElementById('sync-bar'));
+setInterval(function(){ renderSyncBar(document.getElementById('sync-bar')); }, 15000);
+</script>
+</body>
+</html>
