@@ -376,7 +376,7 @@ function renderAll(){
     if(od.length){
       stripCard.style.display = 'block';
       strip.innerHTML = od.map(function(b){
-        return '<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:8px;min-width:200px;flex:1">' +
+        return '<div onclick="window.location.href=\'HOC_Compound_Coordinator.html\'" title="Open '+b.batch+' in Compound Coordinator" style="cursor:pointer;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:8px;min-width:200px;flex:1;transition:background .1s,transform .1s" onmouseover="this.style.background=\'rgba(239,68,68,.15)\';this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.background=\'rgba(239,68,68,.08)\';this.style.transform=\'translateY(0)\'">' +
           '<div style="font-size:9px;color:var(--red);font-weight:700">F.'+(b.formula||'?')+' · Line '+b.line+' · '+b.batch+'</div>' +
           '<div style="font-size:11px;font-weight:600;margin:3px 0">'+b.desc.slice(0,55)+'</div>' +
           '<div style="font-size:9px;color:var(--text3)">Cmpd due: '+fD(b.cmpddue)+(b.shortage<0?' · '+N(b.shortage)+' shortage':'')+'</div>' +
@@ -397,16 +397,21 @@ function renderAll(){
     });
   }
 
-  // KPI grid — match attachment 3
+  // KPI grid — clickable tiles route to appropriate dashboards
   document.getElementById('kpi-grid').innerHTML = [
-    {l:'Total Batches', v:batches.length, s:'In schedule', c:'var(--text)'},
-    {l:'Running Now',   v:running.length, s:'Active on line', c:running.length?'var(--blue)':'var(--text3)'},
-    {l:'Completed',     v:done, s:'Done this period', c:'var(--green)'},
-    {l:'Compound Overdue', v:overdue.length, s:'OVERDUE + CRITICAL', c:overdue.length?'var(--red)':'var(--green)'},
-    {l:'Forecast Hrs', v:hasLaborData()?Math.round(laborTotal):'—', s:hasLaborData()?(laborCount+' open batches'):'Upload Labor Extract', c:hasLaborData()?'var(--purple)':'var(--text3)'},
-    {l:'QC Hold (session)', v:'0', s:'Awaiting QC decision', c:'var(--text3)'},
-    {l:'My Updates', v:Object.keys(_FLOOR).length, s:'Export to sync', c:'var(--purple)'},
-  ].map(function(k){return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';}).join('');
+    {l:'Total Batches', v:batches.length, s:'In schedule', c:'var(--text)', href:'HOC_Production_Schedule.html'},
+    {l:'Running Now',   v:running.length, s:'Active on line', c:running.length?'var(--blue)':'var(--text3)', href:'HOC_Production_Supervisor.html'},
+    {l:'Completed',     v:done, s:'Done this period', c:'var(--green)', href:'HOC_FG_Reconciliation.html'},
+    {l:'Compound Overdue', v:overdue.length, s:'OVERDUE + CRITICAL', c:overdue.length?'var(--red)':'var(--green)', href:'HOC_Compound_Coordinator.html'},
+    {l:'Forecast Hrs', v:hasLaborData()?Math.round(laborTotal):'—', s:hasLaborData()?(laborCount+' open batches'):'Upload Labor Extract', c:hasLaborData()?'var(--purple)':'var(--text3)', href:hasLaborData()?'HOC_Compound_Coordinator.html':'HOC_Data_Upload_Hub.html'},
+    {l:'QC Hold (session)', v:'0', s:'Awaiting QC decision', c:'var(--text3)', href:'HOC_Quality_Lab.html'},
+    {l:'My Updates', v:Object.keys(_FLOOR).length, s:'Export to sync', c:'var(--purple)', href:'#export'},
+  ].map(function(k){
+    var onclickAttr = k.href === '#export'
+      ? 'onclick="P(\'export\')"'
+      : 'onclick="window.location.href=\''+k.href+'\'"';
+    return '<div class="kpi" '+onclickAttr+' title="Click to investigate" style="cursor:pointer;transition:transform .1s,border-color .1s;border:1px solid transparent" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.borderColor=\'rgba(255,255,255,.12)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.borderColor=\'transparent\'"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';
+  }).join('');
 
   // 5-day Must-Complete forecast cards
   var fiveDay = document.getElementById('cs-5day');
@@ -441,7 +446,7 @@ function renderAll(){
           var sColor = status==='OVERDUE'||status==='CRITICAL' ? 'var(--red)' :
                        status==='AT RISK' ? 'var(--amber)' :
                        status==='ON TRACK' ? 'var(--green)' : 'var(--text3)';
-          return '<div style="background:rgba('+(status==='OVERDUE'?'239,68,68':status==='AT RISK'?'245,158,11':status==='ON TRACK'?'16,185,129':'148,163,184')+',.08);border-left:2px solid '+sColor+';border-radius:4px;padding:5px 7px;margin-bottom:4px">' +
+          return '<div onclick="window.location.href=\'HOC_Compound_Coordinator.html\'" title="Open '+b.batch+' in Compound Coordinator" style="cursor:pointer;background:rgba('+(status==='OVERDUE'?'239,68,68':status==='AT RISK'?'245,158,11':status==='ON TRACK'?'16,185,129':'148,163,184')+',.08);border-left:2px solid '+sColor+';border-radius:4px;padding:5px 7px;margin-bottom:4px;transition:background .1s" onmouseover="this.style.background=\'rgba('+(status==='OVERDUE'?'239,68,68':status==='AT RISK'?'245,158,11':status==='ON TRACK'?'16,185,129':'148,163,184')+',.15)\'" onmouseout="this.style.background=\'rgba('+(status==='OVERDUE'?'239,68,68':status==='AT RISK'?'245,158,11':status==='ON TRACK'?'16,185,129':'148,163,184')+',.08)\'">' +
             '<div style="font-size:9px;font-weight:700;color:'+sColor+'">'+status+'</div>' +
             '<div style="font-size:10px;font-weight:600;color:var(--text)">'+b.desc.slice(0,30)+'</div>' +
             '<div style="font-size:9px;color:var(--text3)">F.'+(b.formula||'?')+' · Ln '+b.line+'</div>' +
@@ -485,7 +490,7 @@ function renderAll(){
       return '<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:6px">Line '+line+' · '+lb.length+' batches</div>' +
         '<div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Date</th><th>Description</th><th>Formula</th><th>Qty</th><th>Cmpd</th><th>Due</th><th>Fill</th></tr></thead><tbody>' +
         lb.map(function(b){
-          return '<tr><td style="font-weight:700">'+b.batch+'</td><td>'+fD(b.date)+'</td>' +
+          return '<tr onclick="window.location.href=\'HOC_Compound_Coordinator.html\'" style="cursor:pointer" title="Open in Compound Coordinator"><td style="font-weight:700">'+b.batch+'</td><td>'+fD(b.date)+'</td>' +
             '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc+'</td>' +
             '<td>F.'+(b.formula||'?')+'</td><td style="text-align:right">'+N(b.origqty)+'</td>' +
             '<td>'+cmpdbadge(b.cmpd)+'</td><td>'+fD(b.cmpddue)+'</td><td>'+statusBadge(b.status)+'</td></tr>';
@@ -498,7 +503,11 @@ function renderAll(){
   if(allEl){
     allEl.innerHTML = '<div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Ln</th><th>Date</th><th>Description</th><th>Formula</th><th>Qty</th><th>Compound Status</th><th>Cmpd Due</th><th>Fill Status</th></tr></thead><tbody>' +
       batches.map(function(b){
-        return '<tr><td style="font-weight:700">'+b.batch+'</td><td>L'+b.line+'</td><td>'+fD(b.date)+'</td>' +
+        // Smart routing based on batch state
+        var href = 'HOC_Compound_Coordinator.html';
+        if(b.status==='RUNNING') href = 'HOC_Production_Supervisor.html';
+        else if(b.status==='COMPLETED') href = 'HOC_FG_Reconciliation.html';
+        return '<tr onclick="window.location.href=\''+href+'\'" style="cursor:pointer" title="Open in '+href.replace('HOC_','').replace('.html','').replace(/_/g,' ')+'"><td style="font-weight:700">'+b.batch+'</td><td>L'+b.line+'</td><td>'+fD(b.date)+'</td>' +
           '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc+'</td>' +
           '<td>F.'+(b.formula||'?')+'</td><td style="text-align:right">'+N(b.origqty)+'</td>' +
           '<td>'+cmpdbadge(b.cmpd)+'</td><td>'+fD(b.cmpddue)+'</td><td>'+statusBadge(b.status)+'</td></tr>';

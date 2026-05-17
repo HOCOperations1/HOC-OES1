@@ -922,37 +922,49 @@ function renderAlert(){
 }
 
 function renderKPIs(){
-  const done=BATCHES.filter(b=>getStatus(b)==='COMPLETED').length;
-  const run=BATCHES.filter(b=>getStatus(b)==='RUNNING').length;
-  const ns=BATCHES.filter(b=>getStatus(b)==='NOT STARTED').length;
-  const od=BATCHES.filter(b=>(b.cmpd==='COMPOUND OVERDUE'||b.cmpd==='COMPOUND CRITICAL')&&getStatus(b)!=='COMPLETED').length;
-  const ar=BATCHES.filter(b=>b.cmpd==='COMPOUND AT RISK'&&getStatus(b)!=='COMPLETED').length;
-  const pe=BATCHES.reduce((s,b)=>s+b.planea,0);
-  const ae=BATCHES.reduce((s,b)=>s+b.actualea,0);
-  const att=pe>0?(ae/pe*100).toFixed(1)+'%':'—';
-
-  // ── Case Goal — pull from Production Schedule (Monthly Plan summary) ─
-  // origqty IS the case count (planea is eaches = origqty × casepk).
-  // Filter strictly to current month so we don't sum the full uploaded schedule.
-  var monthPlannedCases = 0;
-  var monthCompletedCases = 0;
-  var monthPrefix = (new Date()).toISOString().slice(0,7); // e.g. "2026-05"
-  // De-dupe by batch number in case Production Schedule has duplicates from multiple uploads
-  var seenBatches = {};
-  // Source of truth: in-memory BATCHES (already filtered to May by getMayBatches earlier)
-  // BUT — BATCHES here is the raw global, NOT the filtered list. Filter by month explicitly:
-  BATCHES.forEach(function(b){
-    if(!b.batch || seenBatches[b.batch]) return;
-    if(!b.date || b.date.indexOf(monthPrefix) !== 0) return; // strict month filter
-    seenBatches[b.batch] = 1;
-    monthPlannedCases   += (Number(b.origqty) || 0);
-    monthCompletedCases += (Number(b.actqty)  || 0);
+  // ── Month filter: keep all the KPIs internally consistent ────────────
+  var monthPrefix = (new Date()).toISOString().slice(0,7); // "2026-05"
+  var mayBatches = BATCHES.filter(function(b){
+    return b.date && String(b.date).indexOf(monthPrefix) === 0;
   });
-  var caseBalance = monthCompletedCases - monthPlannedCases;
-  var caseAttainPct = monthPlannedCases > 0 ? (monthCompletedCases / monthPlannedCases * 100) : 0;
 
-  // ── OEE Goal — pull from Leadership Goals (will be patched live by user) ─
-  // Goals are written to localStorage `hoc_oes_goals_v1` by Leadership Control Tower
+  const done=mayBatches.filter(b=>getStatus(b)==='COMPLETED').length;
+  const run =mayBatches.filter(b=>getStatus(b)==='RUNNING').length;
+  const ns  =mayBatches.filter(b=>getStatus(b)==='NOT STARTED').length;
+  const od  =mayBatches.filter(b=>(b.cmpd==='COMPOUND OVERDUE'||b.cmpd==='COMPOUND CRITICAL')&&getStatus(b)!=='COMPLETED').length;
+  const ar  =mayBatches.filter(b=>b.cmpd==='COMPOUND AT RISK'&&getStatus(b)!=='COMPLETED').length;
+
+  // ── Cases: PREFER Goal Source Data values (the single source of truth) ─
+  // Goal Source Data row 20 in Production Tracker has the official monthly
+  // rollup that the planner maintains. The Data Upload Hub parses this into
+  // _UPLOAD.goals.may_actual / may_goal. We use those values directly when
+  // available, since they reflect the planner's authoritative number — not
+  // a recomputation from individual batches that might count things twice
+  // or miss bulk/component batches.
+  var monthCompletedCases, monthPlannedCases;
+  var caseSource = 'computed from batches';
+  var uploadGoals = (_UPLOAD && _UPLOAD.goals) || {};
+
+  if(uploadGoals.may_actual > 0 || uploadGoals.may_goal > 0){
+    // Authoritative — use the planner's monthly rollup
+    monthCompletedCases = Number(uploadGoals.may_actual) || 0;
+    monthPlannedCases   = Number(uploadGoals.may_goal)   || 0;
+    caseSource = 'Goal Source Data';
+  } else {
+    // Fallback — sum from individual May batches (deduped by batch number)
+    monthCompletedCases = 0;
+    monthPlannedCases = 0;
+    var seenBatches = {};
+    mayBatches.forEach(function(b){
+      if(!b.batch || seenBatches[b.batch]) return;
+      seenBatches[b.batch] = 1;
+      monthPlannedCases   += (Number(b.origqty) || 0);
+      monthCompletedCases += (Number(b.actqty)  || 0);
+    });
+  }
+  var caseBalance = monthCompletedCases - monthPlannedCases;
+
+  // ── Goal/Targets ───────────────────────────────────────────────────────
   var oeeGoal = 60; // default % until live patch
   var attainGoal = 90; // default %
   try {
@@ -964,18 +976,50 @@ function renderKPIs(){
     }
   } catch(e) {}
 
-  // ── Live OEE — currently calculated from BATCHES (placeholder until live patch) ─
-  // OEE = (actualea / planea) for now; user will embed live patch later
-  var liveOEE = pe > 0 ? Math.round(ae / pe * 100) : 0;
+  // ── Live OEE — from Patch line values; blank if no Patch upload yet
+  // (was diluted by unstarted batches before — now honest "—" when no data)
+  var liveOEE = null;
+  var oeeSource = '';
+  try {
+    var oeeMap = uploadGoals.oee_by_line || {};
+    var oeeValues = Object.values(oeeMap).filter(function(v){ return v > 0; });
+    if(oeeValues.length){
+      var sum = oeeValues.reduce(function(a,b){ return a+b; }, 0);
+      liveOEE = Math.round(sum / oeeValues.length);
+      oeeSource = oeeValues.length + ' lines (Patch)';
+    }
+  } catch(e){ console.warn('OEE calc failed', e); }
+
+  // ── Attainment — from Patch line values; blank if no Patch upload yet
+  var liveAttainment = null;
+  var attSource = '';
+  try {
+    var attMap = uploadGoals.att_by_line || {};
+    var attValues = Object.values(attMap).filter(function(v){ return v > 0; });
+    if(attValues.length){
+      var asum = attValues.reduce(function(a,b){ return a+b; }, 0);
+      liveAttainment = Math.round(asum / attValues.length);
+      attSource = attValues.length + ' lines (Patch)';
+    }
+  } catch(e){}
+
+  // Render — show "—" for OEE/Attainment when no data, not a fake 49%
+  var oeeDisplay = liveOEE != null ? liveOEE+'%' : '—';
+  var oeeSubtitle = liveOEE != null ? (oeeSource+' · vs '+oeeGoal+'%') : 'Upload Patch report';
+  var oeeColor = liveOEE == null ? 'var(--text3)' : liveOEE>=oeeGoal ? 'var(--green)' : 'var(--red)';
+
+  var attDisplay = liveAttainment != null ? liveAttainment+'%' : '—';
+  var attSubtitle = liveAttainment != null ? (attSource+' · vs '+attainGoal+'%') : 'Upload Patch report';
+  var attColor = liveAttainment == null ? 'var(--text3)' : liveAttainment>=attainGoal ? 'var(--green)' : 'var(--red)';
 
   document.getElementById('cmd-kpis').innerHTML=[
-    {l:'May Cases',     v:N(Math.round(monthCompletedCases)), s:'Actual produced', c:'var(--green)'},
+    {l:'May Cases',     v:N(Math.round(monthCompletedCases)), s:caseSource, c:'var(--green)'},
     {l:'Case Balance',  v:(caseBalance>=0?'+':'')+N(Math.round(caseBalance)), s:'vs goal', c:caseBalance>=0?'var(--green)':'var(--red)'},
-    {l:'Open Batches',  v:ns,  s:'Not started',      c:'var(--text)'},
-    {l:'Running Now',   v:run, s:'Active on floor',  c:'var(--blue)'},
-    {l:'Completed',     v:done,s:'This month',       c:'var(--green)'},
-    {l:'OEE',           v:liveOEE+'%', s:'vs '+oeeGoal+'% goal', c:liveOEE>=oeeGoal?'var(--green)':'var(--red)'},
-    {l:'Attainment',    v:caseAttainPct.toFixed(0)+'%', s:'vs '+attainGoal+'% goal', c:caseAttainPct>=attainGoal?'var(--green)':'var(--red)'},
+    {l:'Open Batches',  v:ns,  s:'Not started · May',  c:'var(--text)'},
+    {l:'Running Now',   v:run, s:'Active on floor',    c:'var(--blue)'},
+    {l:'Completed',     v:done,s:'This month',         c:'var(--green)'},
+    {l:'OEE',           v:oeeDisplay, s:oeeSubtitle,   c:oeeColor},
+    {l:'Attainment',    v:attDisplay, s:attSubtitle,   c:attColor},
     {l:'Case Goal',     v:N(Math.round(monthPlannedCases)), s:'May target', c:'var(--text)'},
   ].map(k=>`<div class="kpi"><div class="kl">${k.l}</div><div class="kv" style="color:${k.c}">${k.v}</div><div class="ks">${k.s}</div></div>`).join('');
 }
