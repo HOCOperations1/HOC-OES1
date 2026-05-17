@@ -255,14 +255,14 @@ function renderKPIs(){
   var ns=thisMonth.filter(function(b){return b.status==='NOT STARTED';}).length;
   var lines=[...new Set(batches.map(function(b){return b.line;}))].filter(Boolean).length;
   document.getElementById('ps-kpis').innerHTML=[
-    {l:monthName+' Batches',v:thisMonth.length,s:'Current month',c:'var(--text)'},
-    {l:'Total Batches',v:batches.length,s:'All periods',c:'var(--text2)'},
-    {l:'Completed',v:comp,s:monthName,c:'var(--green)'},
-    {l:'Running',v:run,s:'Active now',c:run?'var(--amber)':'var(--text3)'},
-    {l:'Not Started',v:ns,s:'Scheduled ahead',c:'var(--text)'},
-    {l:'Lines',v:lines,s:'Production lines',c:'var(--blue)'},
+    {l:monthName+' Batches',v:thisMonth.length,s:'Current month',c:'var(--text)', href:'HOC_FG_Reconciliation.html'},
+    {l:'Total Batches',v:batches.length,s:'All periods',c:'var(--text2)', href:'HOC_FG_Reconciliation.html'},
+    {l:'Completed',v:comp,s:monthName,c:'var(--green)', href:'HOC_FG_Reconciliation.html'},
+    {l:'Running',v:run,s:'Active now',c:run?'var(--amber)':'var(--text3)', href:'HOC_Production_Supervisor.html'},
+    {l:'Not Started',v:ns,s:'Scheduled ahead',c:'var(--text)', href:'HOC_Compound_Coordinator.html'},
+    {l:'Lines',v:lines,s:'Production lines',c:'var(--blue)', href:'HOC_Production_Supervisor.html'},
   ].map(function(k){
-    return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';
+    return '<div class="kpi" onclick="window.location.href=\''+k.href+'\'" title="Click to investigate" style="cursor:pointer;transition:transform .1s,border-color .1s;border:1px solid transparent" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.borderColor=\'rgba(255,255,255,.12)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.borderColor=\'transparent\'"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';
   }).join('');
 }
 
@@ -312,7 +312,12 @@ function renderTable(){
   }
   el.innerHTML=batches.map(function(b){
     var yc=b.yield_pct>=100?'var(--green)':b.yield_pct>=90?'var(--amber)':'var(--red)';
-    return '<tr>'+
+    // Smart routing based on batch state
+    var href = 'HOC_Compound_Coordinator.html';
+    if(b.status==='RUNNING') href = 'HOC_Production_Supervisor.html';
+    else if(b.status==='COMPLETED') href = 'HOC_FG_Reconciliation.html';
+    var hrefShort = href.replace('HOC_','').replace('.html','').replace(/_/g,' ');
+    return '<tr onclick="window.location.href=\''+href+'\'" style="cursor:pointer" title="Open '+b.batch+' in '+hrefShort+'">'+
       '<td>'+fD(b.date)+'</td>'+
       '<td><span style="font-weight:700;color:var(--blue)">L'+b.line+'</span></td>'+
       '<td style="font-weight:700;font-size:10px">'+b.batch+'</td>'+

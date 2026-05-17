@@ -218,7 +218,7 @@ textarea{width:100%;resize:vertical;min-height:46px;margin-top:4px}
     <div class="logo">RC</div>
     <div>
       <div class="brand-name">Employee Roll Call</div>
-      <div class="brand-sub">Shift attendance · Points tracking · HC vs standard · May 07, 2026</div>
+      <div class="brand-sub">Shift attendance · Points tracking · HC vs standard · <span class="js-today-date">May 17, 2026</span></div>
     </div>
   </div>
   <nav class="nav">
@@ -551,8 +551,9 @@ function getQC(batchId) {
 
 
 const N  = n => typeof n==='number' ? n.toLocaleString() : (n||'—');
-const fD = s => {if(!s)return'—';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'numeric',day:'numeric'});}catch{return s;}};
-const fDL= s => {if(!s)return'—';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch{return s;}};
+function _excelToDate(serial){var n=Number(serial);if(isNaN(n)||n<1||n>200000)return null;return new Date(Math.round((n-25569)*86400*1000));}
+const fD = s => {if(!s)return'—';try{if(typeof s==='number'||(typeof s==='string'&&/^\d{4,6}(\.\d+)?$/.test(s.trim()))){var ed=_excelToDate(s);if(ed&&!isNaN(ed.getTime()))return ed.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});}return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'numeric',day:'numeric'});}catch{return s;}};
+const fDL= s => {if(!s)return'—';try{if(typeof s==='number'||(typeof s==='string'&&/^\d{4,6}(\.\d+)?$/.test(s.trim()))){var ed=_excelToDate(s);if(ed&&!isNaN(ed.getTime()))return ed.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch{return s;}};
 
 function stBadge(b) {
   const st=getStatus(b);
@@ -1196,4 +1197,11 @@ try {
 </script>
 
 <script src="hoc_events.js"></script>
+<script>
+// Auto-update header date placeholder
+(function(){
+  var today = new Date().toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'});
+  document.querySelectorAll('.js-today-date').forEach(function(el){ el.textContent = today; });
+})();
+</script>
 </body></html>

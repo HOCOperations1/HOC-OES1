@@ -918,11 +918,28 @@ function updateAllDashboards() {
           grows.forEach(function(row) {
             if(!row[0]) return;
             var label = String(row[0]).trim();
-            if(label.includes('MONTHLY')) { in_monthly=true; return; }
+            // Section header that flips us into the "monthly case goals" table.
+            // Be specific: must contain both MONTHLY and CASE GOAL so we don't
+            // get false positives from row 2's "monthly OEE %" instructions.
+            if(label.indexOf('MONTHLY')>=0 && label.toUpperCase().indexOf('CASE')>=0) {
+              in_monthly=true;
+              return;
+            }
             if(in_monthly && label==='May') {
-              goals.may_actual = parseInt(parseFloat(row[1]||0))||0;
-              goals.may_goal   = parseInt(parseFloat(row[2]||0))||0;
-              goals.may_bal    = parseInt(parseFloat(row[3]||0))||0;
+              var ma = parseInt(parseFloat(row[1]||0))||0;
+              var mg = parseInt(parseFloat(row[2]||0))||0;
+              var mb = parseInt(parseFloat(row[3]||0))||0;
+              // Sanity check: HOC monthly cases will always be in the
+              // tens of thousands. If we see tiny numbers (<1000), the
+              // user uploaded the wrong file (e.g. Planning Data instead
+              // of Production Tracker). Don't overwrite goals with junk.
+              if(ma >= 1000 || mg >= 1000) {
+                goals.may_actual = ma;
+                goals.may_goal   = mg;
+                goals.may_bal    = mb;
+              } else {
+                progress('⚠ Goal Source Data row "May" has tiny values (actual=' + ma + ', goal=' + mg + '). Skipping — likely wrong file uploaded.', 'warn');
+              }
             }
             // OEE by line
             var lineNum = parseInt(label);

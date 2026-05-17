@@ -308,17 +308,19 @@ function renderAll(){
   var total_min=ns.reduce(function(s,b){return s+b.minutes;},0);
   var goals=getGoals();
   document.getElementById('kpi-grid').innerHTML=[
-    {l:'Scheduled',    v:ns.length,               s:'Not started',     c:'var(--text)'},
-    {l:'Std Minutes',  v:N(Math.round(total_min)), s:'Remaining',       c:'var(--text)'},
-    {l:'Std Hours',    v:Math.round(total_min/60*10)/10, s:'Remaining', c:'var(--text)'},
-    {l:'Remaining Days',v:goals.remaining_days||17,s:'In month',        c:'var(--text)'},
-  ].map(function(k){return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';}).join('');
+    {l:'Scheduled',    v:ns.length,               s:'Not started',     c:'var(--text)', href:'HOC_Production_Schedule.html'},
+    {l:'Std Minutes',  v:N(Math.round(total_min)), s:'Remaining',       c:'var(--text)', href:'HOC_Production_Schedule.html'},
+    {l:'Std Hours',    v:Math.round(total_min/60*10)/10, s:'Remaining', c:'var(--text)', href:'HOC_Production_Schedule.html'},
+    {l:'Remaining Days',v:goals.remaining_days||17,s:'In month',        c:'var(--text)', href:'HOC_Production_Schedule.html'},
+  ].map(function(k){
+    return '<div class="kpi" onclick="window.location.href=\''+k.href+'\'" title="Click to investigate" style="cursor:pointer;transition:transform .1s,border-color .1s;border:1px solid transparent" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.borderColor=\'rgba(255,255,255,.12)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.borderColor=\'transparent\'"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';
+  }).join('');
 
 
   var ns=getMayBatches().filter(function(b){return b.status==='NOT STARTED';});
   document.getElementById('detail-content').innerHTML='<div class="card"><div class="card-title">Scheduled Batches — Not Started</div>'+
     '<div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Ln</th><th>Date</th><th>Description</th><th>Plan Qty</th><th>Std Min</th><th>Compound</th></tr></thead><tbody>'+
-    ns.map(function(b){return '<tr><td style="font-weight:700">'+b.batch+'</td><td>L'+b.line+'</td><td>'+fD(b.date)+'</td>'+
+    ns.map(function(b){return '<tr onclick="window.location.href=\'HOC_Compound_Coordinator.html\'" style="cursor:pointer" title="Open '+b.batch+' in Compound Coordinator"><td style="font-weight:700">'+b.batch+'</td><td>L'+b.line+'</td><td>'+fD(b.date)+'</td>'+
       '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc+'</td>'+
       '<td style="text-align:right">'+N(b.origqty)+'</td><td style="text-align:right">'+N(b.minutes)+'</td><td>'+cmpdbadge(b.cmpd)+'</td></tr>';}).join('')+
     '</tbody></table></div></div>';

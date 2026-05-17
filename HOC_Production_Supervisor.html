@@ -122,7 +122,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--green)}
 <div class="topbar">
   <div class="brand"><div class="logo">HC</div>
     <div><div class="brand-name">Production Supervisor</div>
-    <div class="brand-sub">HOC_Production_Tracker · May 07, 2026</div></div>
+    <div class="brand-sub">HOC_Production_Tracker · <span class="js-today-date">May 17, 2026</span></div></div>
   </div>
   <nav class="nav">
     <button class="nb active" onclick="P('cmd')">Command Center</button>
@@ -771,9 +771,23 @@ function getQC(batchId) {
 
 
 const N  = n => typeof n==='number' ? n.toLocaleString() : (n||'—');
+// Convert Excel serial date number (days since 1899-12-30) to a JS Date.
+// Excel stores dates as floats; whole part = days, decimal = fraction of day.
+// 25569 = days from Excel epoch (1899-12-30) to Unix epoch (1970-01-01).
+function _excelToDate(serial) {
+  var n = Number(serial);
+  if(isNaN(n) || n < 1 || n > 200000) return null;
+  return new Date(Math.round((n - 25569) * 86400 * 1000));
+}
+
 const fD = s => {
   if(!s) return '—';
   try {
+    // Excel serial dates: detect "46141.7916" style or bare numbers
+    if(typeof s === 'number' || (typeof s === 'string' && /^\d{4,6}(\.\d+)?$/.test(s.trim()))){
+      var ed = _excelToDate(s);
+      if(ed && !isNaN(ed.getTime())) return ed.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});
+    }
     var d = (typeof s === 'string' && s.indexOf('T') < 0) ? new Date(s+'T12:00:00') : new Date(s);
     if(isNaN(d.getTime())) return s;
     return d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});
@@ -782,6 +796,10 @@ const fD = s => {
 const fDL = s => {
   if(!s) return '—';
   try {
+    if(typeof s === 'number' || (typeof s === 'string' && /^\d{4,6}(\.\d+)?$/.test(s.trim()))){
+      var ed = _excelToDate(s);
+      if(ed && !isNaN(ed.getTime())) return ed.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    }
     var d = (typeof s === 'string' && s.indexOf('T') < 0) ? new Date(s+'T12:00:00') : new Date(s);
     if(isNaN(d.getTime())) return s;
     return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
@@ -945,7 +963,7 @@ function renderKPIs(){
   var caseSource = 'computed from batches';
   var uploadGoals = (_UPLOAD && _UPLOAD.goals) || {};
 
-  if(uploadGoals.may_actual > 0 || uploadGoals.may_goal > 0){
+  if(uploadGoals.may_actual >= 1000 || uploadGoals.may_goal >= 1000){
     // Authoritative — use the planner's monthly rollup
     monthCompletedCases = Number(uploadGoals.may_actual) || 0;
     monthPlannedCases   = Number(uploadGoals.may_goal)   || 0;
@@ -1521,4 +1539,11 @@ setInterval(function() {
 })();
 </script>
 <script src="hoc_events.js"></script>
+<script>
+// Auto-update header date placeholder
+(function(){
+  var today = new Date().toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'});
+  document.querySelectorAll('.js-today-date').forEach(function(el){ el.textContent = today; });
+})();
+</script>
 </body></html>

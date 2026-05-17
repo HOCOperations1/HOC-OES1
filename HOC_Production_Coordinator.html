@@ -125,7 +125,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--amber)}
 <div class="topbar">
   <div class="brand"><div class="logo">PC</div>
     <div><div class="brand-name">Production Coordinator</div>
-    <div class="brand-sub">Component verification · May 07, 2026</div></div>
+    <div class="brand-sub">Component verification · <span class="js-today-date">May 17, 2026</span></div></div>
   </div>
   <nav class="nav">
     <button class="nb active" onclick="P('cmd')">Command Center</button>
@@ -487,8 +487,9 @@ function getQC(batchId) {
 
 
 const N  = n => typeof n==='number' ? n.toLocaleString() : (n||'—');
-const fD = s => {if(!s)return'—';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'numeric',day:'numeric'});}catch{return s;}};
-const fDL= s => {if(!s)return'—';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch{return s;}};
+function _excelToDate(serial){var n=Number(serial);if(isNaN(n)||n<1||n>200000)return null;return new Date(Math.round((n-25569)*86400*1000));}
+const fD = s => {if(!s)return'—';try{if(typeof s==='number'||(typeof s==='string'&&/^\d{4,6}(\.\d+)?$/.test(s.trim()))){var ed=_excelToDate(s);if(ed&&!isNaN(ed.getTime()))return ed.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});}return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'numeric',day:'numeric'});}catch{return s;}};
+const fDL= s => {if(!s)return'—';try{if(typeof s==='number'||(typeof s==='string'&&/^\d{4,6}(\.\d+)?$/.test(s.trim()))){var ed=_excelToDate(s);if(ed&&!isNaN(ed.getTime()))return ed.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch{return s;}};
 const pct= v => (v*100).toFixed(1)+'%';
 
 function stBadge(b) {
@@ -948,4 +949,11 @@ setInterval(function() {
 }, 30000);
 renderComponents();
 </script><script src="hoc_events.js"></script>
+<script>
+// Auto-update header date placeholder
+(function(){
+  var today = new Date().toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'});
+  document.querySelectorAll('.js-today-date').forEach(function(el){ el.textContent = today; });
+})();
+</script>
 </body></html>

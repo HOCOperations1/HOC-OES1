@@ -307,14 +307,16 @@ function renderAll(){
   var goals=getGoals(); var batches=getMayBatches();
   var ns=batches.filter(function(b){return b.status==='NOT STARTED';}).length;
   document.getElementById('kpi-grid').innerHTML=[
-    {l:'May Actual',     v:N(goals.may_actual||0), s:'Cases produced',  c:'var(--green)'},
-    {l:'May Goal',       v:N(goals.may_goal||0),   s:'Target cases',    c:'var(--text2)'},
-    {l:'Case Balance',   v:N(goals.may_bal||0),    s:'vs goal',         c:(goals.may_bal||0)>=0?'var(--green)':'var(--red)'},
-    {l:'Attainment',     v:(goals.att_act||0)+'%', s:'vs 90% goal',     c:(goals.att_act||0)>=90?'var(--green)':'var(--red)'},
-    {l:'OEE',            v:(goals.oee_act||0)+'%', s:'vs 60% goal',     c:(goals.oee_act||0)>=60?'var(--green)':'var(--amber)'},
-    {l:'Not Started',    v:ns,                      s:'Scheduled ahead', c:'var(--text)'},
-    {l:'Remaining Days', v:goals.remaining_days||17,s:'In month',        c:'var(--text)'},
-  ].map(function(k){return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';}).join('');
+    {l:'May Actual',     v:N(goals.may_actual||0), s:'Cases produced',  c:'var(--green)', href:'HOC_Schedule_Reforecast.html'},
+    {l:'May Goal',       v:N(goals.may_goal||0),   s:'Target cases',    c:'var(--text2)', href:'HOC_Schedule_Reforecast.html'},
+    {l:'Case Balance',   v:N(goals.may_bal||0),    s:'vs goal',         c:(goals.may_bal||0)>=0?'var(--green)':'var(--red)', href:'HOC_Schedule_Reforecast.html'},
+    {l:'Attainment',     v:(goals.att_act||0)+'%', s:'vs 90% goal',     c:(goals.att_act||0)>=90?'var(--green)':'var(--red)', href:'HOC_Production_Supervisor.html'},
+    {l:'OEE',            v:(goals.oee_act||0)+'%', s:'vs 60% goal',     c:(goals.oee_act||0)>=60?'var(--green)':'var(--amber)', href:'HOC_Production_Supervisor.html'},
+    {l:'Not Started',    v:ns,                      s:'Scheduled ahead', c:'var(--text)', href:'HOC_Production_Schedule.html'},
+    {l:'Remaining Days', v:goals.remaining_days||17,s:'In month',        c:'var(--text)', href:'HOC_Production_Schedule.html'},
+  ].map(function(k){
+    return '<div class="kpi" onclick="window.location.href=\''+k.href+'\'" title="Click to investigate" style="cursor:pointer;transition:transform .1s,border-color .1s;border:1px solid transparent" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.borderColor=\'rgba(255,255,255,.12)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.borderColor=\'transparent\'"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';
+  }).join('');
 
 
   var oee_lines=getGoals().oee_by_line||{};
