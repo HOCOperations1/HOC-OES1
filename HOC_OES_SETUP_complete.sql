@@ -210,6 +210,25 @@ create policy "Anon insert" on storage.objects
   for insert to anon with check (bucket_id = 'qc-release-pdfs');
 
 
+-- -------------------------------------------------------------------
+-- hoc_sync_bus: cross-device sync heartbeat used by Data Upload Hub.
+-- One row (id=1), updated_at bumps whenever a dashboard pushes data.
+-- Other dashboards poll updated_at to know when to refresh.
+-- -------------------------------------------------------------------
+create table if not exists hoc_sync_bus (
+  id          int primary key default 1,
+  updated_at  timestamptz default now(),
+  payload     jsonb
+);
+alter table hoc_sync_bus enable row level security;
+drop policy if exists "anon all" on hoc_sync_bus;
+create policy "anon all" on hoc_sync_bus
+  for all to anon using (true) with check (true);
+
+insert into hoc_sync_bus (id, payload) values (1, '{}'::jsonb)
+on conflict (id) do nothing;
+
+
 -- ===================================================================
 -- SANITY CHECK
 -- ===================================================================
@@ -219,4 +238,5 @@ select 'setup complete' as status,
   (select count(*) from hoc_qc_tests)     as qc_tests_rows,
   (select count(*) from hoc_qc_specs)     as qc_specs_rows,
   (select count(*) from hoc_events)       as events_rows,
-  (select count(*) from hoc_event_config) as event_config_rows;
+  (select count(*) from hoc_event_config) as event_config_rows,
+  (select count(*) from hoc_sync_bus)     as sync_bus_rows;

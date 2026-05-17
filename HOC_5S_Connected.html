@@ -4821,7 +4821,13 @@ function printCl(clId){
   '<div class="hdr"><div><div style="font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:'+dc+';margin-bottom:4px;">HOC 5S for Success</div><div style="font-size:22px;font-weight:800;">'+cl.title+'</div><div style="font-size:12px;color:#64748B;margin-top:3px;">'+(cl.dept?cl.dept+' - ':'')+cl.freq+'</div></div>'+
   '<div style="text-align:right;"><div class="badge">'+cl.freq.toUpperCase()+'</div><div style="font-size:11px;color:#64748B;margin-top:8px;">Date: ___________</div><div style="font-size:11px;color:#64748B;margin-top:4px;">Sign: ___________</div></div></div>'+
   cl.items.map(function(item,i){return '<div class="item"><div class="box"></div><div style="font-size:13px;font-weight:600;">'+(i+1)+'. '+item.text+'</div></div>';}).join('')+
-  '<div class="ft"><span>HOC 5S for Success - Operational Excellence</span><span>'+new Date().toLocaleDateString()+'</span></div>
+  '<div class="ft"><span>HOC 5S for Success - Operational Excellence</span><span>'+new Date().toLocaleDateString()+'</span></div>'+
+  '</body></html>');
+  w.document.close();
+  setTimeout(function(){w.print();},250);
+}
+</script>
+
 <script>
 // Auto-update date displays
 (function(){

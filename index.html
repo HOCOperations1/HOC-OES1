@@ -383,46 +383,154 @@ if(localStorage.getItem('hoc_oes_version') !== HOC_OES_VERSION){
 
 <script>
 const SYNC_KEY = 'hoc_sync_v1';
+const UPLOAD_KEY = 'hoc_upload_v1';
+const SUPA_URL = 'https://yemtpvrumqvbrzrpwnyy.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllbXRwdnJ1bXF2YnpyenB3bnl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MTQ0OTMsImV4cCI6MjA5NDA5MDQ5M30.HURBuAARZ-8ioMT60_XnkU_QeOtupPdvEnS0sFc9Ypo';
 
+function H(){ return {'apikey':SUPA_KEY, 'Authorization':'Bearer '+SUPA_KEY}; }
 function syncRead() { try { return JSON.parse(localStorage.getItem(SYNC_KEY)||'{}'); } catch(e) { return {}; } }
 function N(n) { return typeof n==='number' ? n.toLocaleString() : (n||'—'); }
 function pct(v) { return typeof v==='number' ? Math.round(v*100)+'%' : '—'; }
 
+// Pulled from Supabase + cached in localStorage
+var _UPLOAD = {};
+var _FLOOR = {};
+
+function loadLocal(){
+  try { var u = localStorage.getItem(UPLOAD_KEY); if(u) _UPLOAD = JSON.parse(u); } catch(e){}
+  try { var f = localStorage.getItem('hoc_floor_v1'); if(f) _FLOOR = JSON.parse(f); } catch(e){}
+}
+
+// Pull master schedule from Supabase (broadcast by Data Upload Hub)
+function pullScheduleFromSupabase(){
+  return fetch(SUPA_URL+'/rest/v1/hoc_schedule?id=eq.1', {headers:H()})
+    .then(function(r){ return r.ok ? r.json() : []; })
+    .then(function(rows){
+      if(!rows || !rows.length || !rows[0].data) return;
+      var remote;
+      try{ remote = JSON.parse(rows[0].data); } catch(e){ return; }
+      var rTs = new Date(remote._updated||0).getTime();
+      var lTs = new Date((_UPLOAD&&_UPLOAD._updated)||0).getTime();
+      if(rTs > lTs){
+        _UPLOAD = remote;
+        localStorage.setItem(UPLOAD_KEY, JSON.stringify(remote));
+      }
+    }).catch(function(){});
+}
+
+// Pull floor updates (status changes, qc_status, etc) from Supabase
+function pullFloorFromSupabase(){
+  return fetch(SUPA_URL+'/rest/v1/hoc_batches?select=*', {headers:H()})
+    .then(function(r){ return r.ok ? r.json() : []; })
+    .then(function(rows){
+      if(!Array.isArray(rows)) return;
+      var fl = {};
+      rows.forEach(function(r){
+        try { fl[r.batch_id] = typeof r.data === 'string' ? JSON.parse(r.data) : r.data; }
+        catch(e){}
+      });
+      _FLOOR = fl;
+      localStorage.setItem('hoc_floor_v1', JSON.stringify(_FLOOR));
+    }).catch(function(){});
+}
+
 // Show current URL
 document.getElementById('current-url').textContent = window.location.href.slice(0,80) + '...';
 
-// Load KPIs from embedded goals data (from Demand Hub localStorage cache or direct)
+// Compute KPIs from the live schedule + floor data
 function loadKPIs() {
-  var all = syncRead();
-  var n = Object.keys(all).length;
-  var blocked = Object.values(all).filter(function(v){return (v.cc&&v.cc.blocked)||(v.pc&&v.pc.blocked);}).length;
-  
+  // Floor updates count (from Supabase floor table now, not just local sync bus)
+  var floorN = Object.keys(_FLOOR).length;
+  var localN = Object.keys(syncRead()).length;
+  var n = Math.max(floorN, localN);
   document.getElementById('kv-synced').textContent = n;
   document.getElementById('kv-synced').style.color = n > 0 ? 'var(--green)' : 'var(--purple)';
-  document.getElementById('kv-blocked').textContent = blocked;
-  document.getElementById('kv-blocked').style.color = blocked > 0 ? 'var(--red)' : 'var(--green)';
   document.getElementById('sync-dot').style.background = n > 0 ? 'var(--green)' : 'var(--purple)';
   document.getElementById('sync-label').textContent = n > 0 ? n + ' synced' : 'Sync';
 
-  // Try to get goals from localStorage cache
-  try {
-    var goals_cache = JSON.parse(localStorage.getItem('hoc_goals_cache')||'null');
-    if (goals_cache) {
-      var g = goals_cache.goals || {};
-      document.getElementById('kv-cases').textContent   = N(g['Overall May Cases']);
-      document.getElementById('kv-balance').textContent = N(g['Case Balance']);
-      document.getElementById('kv-balance').style.color = (g['Case Balance']||0) < 0 ? 'var(--red)' : 'var(--green)';
-      document.getElementById('kv-batches').textContent = g['Open Remaining Batches'] || '—';
-      var oee_m = (goals_cache.oee||[]).filter(function(m){return m.actual>0&&!m.month.includes('Avg');});
-      var latest = oee_m.length ? oee_m[oee_m.length-1] : null;
-      if (latest) {
-        document.getElementById('kv-oee').textContent = pct(latest.actual);
-        document.getElementById('kv-oee').style.color = latest.actual >= 0.6 ? 'var(--green)' : 'var(--red)';
+  // Compute from schedule data if we have it
+  var batches = (_UPLOAD && _UPLOAD.batches) || [];
+  var goals   = (_UPLOAD && _UPLOAD.goals)   || {};
+
+  if(batches.length){
+    // Filter to current month
+    var now = new Date();
+    var prefix = now.toISOString().slice(0,7); // YYYY-MM
+    var monthBatches = batches.filter(function(b){ return b.date && b.date.startsWith(prefix); });
+
+    // Merge floor data so we know real status + qc_status
+    var merged = monthBatches.map(function(b){
+      var f = _FLOOR[b.batch] || {};
+      return Object.assign({}, b, {
+        status:    f.status || b.status || 'NOT STARTED',
+        actqty:    (f.actqty != null ? f.actqty : b.actqty) || 0,
+        qc_status: f.qc_status || ''
+      });
+    });
+
+    // Open batches = anything not COMPLETED
+    var open = merged.filter(function(b){ return b.status !== 'COMPLETED'; }).length;
+    document.getElementById('kv-batches').textContent = open;
+
+    // Blocked = qc_status HOLD or REJECTED
+    var blocked = merged.filter(function(b){ return b.qc_status === 'HOLD' || b.qc_status === 'REJECTED'; }).length;
+    document.getElementById('kv-blocked').textContent = blocked;
+    document.getElementById('kv-blocked').style.color = blocked > 0 ? 'var(--red)' : 'var(--green)';
+
+    // Cases: prefer parser's keys (may_actual / may_goal / may_bal), then fall back to other formats,
+    // and finally compute from completed batches' actqty if goals are missing entirely.
+    var cases = goals.may_actual;
+    if(cases == null) cases = goals['Overall May Cases'];
+    if(cases == null) cases = goals['May Cases'];
+    if(cases == null) cases = goals.cases_actual;
+    if(cases == null){
+      cases = merged.filter(function(b){ return b.status === 'COMPLETED'; })
+                    .reduce(function(sum,b){ return sum + (b.actqty || 0); }, 0);
+    }
+    document.getElementById('kv-cases').textContent = N(cases);
+
+    // Balance: prefer may_bal direct from parser, otherwise compute
+    var balance = goals.may_bal;
+    if(balance == null){
+      var goalCases = goals.may_goal || goals['Case Goal'] || goals['Overall May Cases Goal'] || goals.cases_goal;
+      if(goalCases && cases != null){
+        balance = (goalCases * 0.9) - cases;
       }
     }
-  } catch(e) {}
-  
-  // Render sync entries
+    if(balance != null){
+      document.getElementById('kv-balance').textContent = N(Math.round(balance));
+      document.getElementById('kv-balance').style.color = balance <= 0 ? 'var(--green)' : 'var(--red)';
+    }
+  }
+
+  // OEE: prefer parser's data, otherwise fall back to goals_cache (Power BI Demand Hub export)
+  if(_UPLOAD && _UPLOAD.goals && (_UPLOAD.goals.oee_actual != null)){
+    document.getElementById('kv-oee').textContent = pct(_UPLOAD.goals.oee_actual / 100);
+    document.getElementById('kv-oee').style.color = _UPLOAD.goals.oee_actual >= 60 ? 'var(--green)' : 'var(--red)';
+  } else {
+    try {
+      var goals_cache = JSON.parse(localStorage.getItem('hoc_goals_cache')||'null');
+      if (goals_cache) {
+        var oee_m = (goals_cache.oee||[]).filter(function(m){return m.actual>0&&!m.month.includes('Avg');});
+        var latest = oee_m.length ? oee_m[oee_m.length-1] : null;
+        if (latest) {
+          document.getElementById('kv-oee').textContent = pct(latest.actual);
+          document.getElementById('kv-oee').style.color = latest.actual >= 0.6 ? 'var(--green)' : 'var(--red)';
+        }
+      }
+    } catch(e) {}
+  }
+
+  // Render sync entries from floor data + local sync bus
+  var all = syncRead();
+  // Also pull floor data into the entries view
+  Object.keys(_FLOOR).forEach(function(bid){
+    var f = _FLOOR[bid];
+    if(!all[bid]) all[bid] = {};
+    if(f.status)        all[bid].prod = all[bid].prod || {status: f.status};
+    if(f.qc_status)     all[bid].qc   = all[bid].qc   || {qc_status: f.qc_status};
+    if(f.cmpd_status||f.cmpd) all[bid].cmpd = all[bid].cmpd || {cmpd_status: f.cmpd_status || f.cmpd};
+  });
   var entries = Object.entries(all);
   var el = document.getElementById('sync-entries');
   if (!entries.length) {
@@ -496,11 +604,30 @@ if ('serviceWorker' in navigator) {
 
 // Watch for sync changes
 window.addEventListener('storage', function(e) {
-  if (e.key === SYNC_KEY) loadKPIs();
+  if (e.key === SYNC_KEY || e.key === UPLOAD_KEY || e.key === 'hoc_floor_v1') loadKPIs();
 });
-setInterval(loadKPIs, 5000);
+
+// Initial load: localStorage first (fast), then Supabase pull (fresh)
+loadLocal();
+
+// Clear any stale 'hoc_goals_cache' written by old hardcoded Leadership Control Tower —
+// we now read live data from Supabase via _UPLOAD instead.
+try {
+  var gc = JSON.parse(localStorage.getItem('hoc_goals_cache')||'null');
+  if(gc && gc.goals && (gc.goals['Overall May Cases'] || gc.goals['Case Balance'])){
+    // This is hardcoded data, not real time. Remove it.
+    localStorage.removeItem('hoc_goals_cache');
+  }
+} catch(e){}
 
 loadKPIs();
+Promise.all([pullScheduleFromSupabase(), pullFloorFromSupabase()]).then(loadKPIs);
+
+// Re-render every 5s from cache, repull from Supabase every 30s
+setInterval(loadKPIs, 5000);
+setInterval(function(){
+  Promise.all([pullScheduleFromSupabase(), pullFloorFromSupabase()]).then(loadKPIs);
+}, 30000);
 </script>
 
   <!-- ══ POWER BI LIVE REPORTS ══════════════════════════════════════ -->

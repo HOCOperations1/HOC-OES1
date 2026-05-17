@@ -1,5 +1,5 @@
 // HOC-OES Service Worker — offline cache
-const CACHE = 'hoc-oes-v4';
+const CACHE = 'hoc-oes-v4.1';
 const SHELL = [
   './index.html',
   './manifest.json',
@@ -18,6 +18,11 @@ const SHELL = [
   './HOC_Demand_Planning_Hub.html',
   './HOC_Schedule_Reforecast.html',
   './HOC_Continuous_Improvement.html',
+  './HOC_Leadership_Control_Tower.html',
+  './HOC_Maintenance_Dashboard.html',
+  './HOC_Gemba_Tracker.html',
+  './HOC_Roll_Call.html',
+  './HOC_5S_Connected.html',
 ];
 
 // Install: cache all shell files
