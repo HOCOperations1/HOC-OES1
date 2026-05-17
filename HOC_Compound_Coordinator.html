@@ -150,7 +150,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--blue)}
     <div class="tbl-wrap"><table>
       <thead><tr>
         <th>Batch</th><th>Ln</th><th>Date</th><th>Description</th><th>Formula</th>
-        <th>Lbs Needed</th><th>Cmpd Status</th><th>Raw Status</th><th>Shortage</th>
+        <th>Lbs Needed</th><th>Labor Hrs</th><th>Cmpd Status</th><th>Raw Status</th><th>Shortage</th>
         <th>Correction Flag</th><th>CC Verified</th><th>Proceed?</th>
       </tr></thead>
       <tbody id="cmd-tbody"></tbody>
@@ -694,6 +694,28 @@ function renderAlert(){
   document.getElementById('alert-area').innerHTML=h;
 }
 
+// ── Labor standards lookup (from Fill Labor Extract upload) ──────────
+// Returns {comp_time, fill_time, time_type, description} or null.
+// time_type 'Hours/LB in' or 'Hours/LB Out' means multiply by LBs for forecast hours.
+function getLaborStandard(formula){
+  if(!formula) return null;
+  try {
+    var raw = localStorage.getItem('hoc_labor_standards_v1');
+    if(!raw) return null;
+    var data = JSON.parse(raw);
+    var map = data.standards || data;
+    return map[String(formula)] || null;
+  } catch(e){ return null; }
+}
+
+// Returns forecast compound labor hours for a batch (lbs × comp_time)
+function getBatchLaborHrs(b){
+  var std = getLaborStandard(b.formula);
+  if(!std || !std.comp_time || !b.lbs) return null;
+  // Hours/LB in × lbs = hours
+  return std.comp_time * b.lbs;
+}
+
 function renderKPIs(){
   const total=BATCHES.length;
   const crit=BATCHES.filter(b=>b.urgency==='CRITICAL').length;
@@ -703,6 +725,22 @@ function renderKPIs(){
   const blocked=Object.values(syncRead()).filter(v=>v.cc&&v.cc.blocked).length;
   const short=BATCHES.filter(b=>b.shortage<0&&b.urgency!=='DONE').length;
   const filling=BATCHES.filter(b=>b.urgency==='FILLING').length;
+
+  // Forecast compound labor hours: sum across all non-completed batches that
+  // have a labor standard. Falls back to "—" if Labor Extract not uploaded.
+  var forecastHrs = 0;
+  var forecastCount = 0;
+  var missingCount = 0;
+  BATCHES.forEach(function(b){
+    if(b.urgency === 'DONE' || b.urgency === 'FILLING') return;
+    if(!b.lbs) return;
+    var hrs = getBatchLaborHrs(b);
+    if(hrs != null){ forecastHrs += hrs; forecastCount++; }
+    else missingCount++;
+  });
+  var hasLaborData = false;
+  try { hasLaborData = !!localStorage.getItem('hoc_labor_standards_v1'); } catch(e){}
+
   document.getElementById('cmd-kpis').innerHTML=[
     {l:'Total Batches',v:total,s:'With compound formula',c:'var(--text)'},
     {l:'Critical',v:crit,s:'Overdue or critical',c:'var(--red)'},
@@ -712,6 +750,7 @@ function renderKPIs(){
     {l:'Blocked',v:blocked,s:'Short — upstream stopped',c:'var(--red)'},
     {l:'Raw Short',v:short,s:'Formula shortage',c:'var(--amber)'},
     {l:'Filling Now',v:filling,s:'Active on line',c:'var(--blue)'},
+    {l:'Forecast Cmpd Hrs',v:hasLaborData?Math.round(forecastHrs):'—',s:hasLaborData?(forecastCount+' batches'+(missingCount?' · '+missingCount+' missing std':'')):'Upload Labor Extract',c:hasLaborData?'var(--purple)':'var(--text3)'},
   ].map(k=>`<div class="kpi"><div class="kl">${k.l}</div><div class="kv" style="color:${k.c}">${k.v}</div><div class="ks">${k.s}</div></div>`).join('');
 }
 
@@ -719,6 +758,10 @@ function renderCmdTable(){
   document.getElementById('cmd-tbody').innerHTML=BATCHES.map(b=>{
     const cc=getCCStatus(b.batch);
     const bc=b.urgency==='CRITICAL'?'rgba(239,68,68,.03)':b.urgency==='AT RISK'?'rgba(245,158,11,.02)':'';
+    const lhrs = getBatchLaborHrs(b);
+    const lhrsCell = lhrs != null
+      ? '<span style="color:var(--purple);font-weight:600">'+lhrs.toFixed(1)+'h</span>'
+      : '<span class="t3">—</span>';
     return`<tr onclick="P('verify');openVD('${b.batch}')" style="cursor:pointer;background:${bc}">
       <td style="font-size:10px;font-weight:600;color:var(--text2)">${b.batch}</td>
       <td style="font-weight:700;color:var(--blue)">L${b.line}</td>
@@ -726,6 +769,7 @@ function renderCmdTable(){
       <td style="font-size:10px;max-width:155px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.desc}</td>
       <td style="font-weight:700;color:var(--blue)">F.${b.formula}</td>
       <td style="text-align:right">${N(b.lbs)}</td>
+      <td style="text-align:right;font-size:10px">${lhrsCell}</td>
       <td>${cmpdBadge(b.cmpd_status)}</td>
       <td>${rawBadge(cc||b.raw_status)}</td>
       <td class="${b.shortage<0?'num-red':'t3'}">${b.shortage<0?N(b.shortage)+' lbs':'—'}</td>
@@ -807,6 +851,24 @@ function alertTeam(team){
   if(!alerts.includes(team))alerts.push(team);
   syncSet(id,'cc',{...u,alerts_sent:alerts,blocked:team==='PRE-WEIGH'||team==='COMPOUND'?true:u.blocked,alert_ts:new Date().toISOString()});
   document.getElementById('alert-log').textContent='Alerts sent: '+alerts.join(', ')+' — '+new Date().toLocaleTimeString();
+  // Fire to audit/notification bus
+  try {
+    var targetMap = {
+      'PRE-WEIGH':       ['preweigh_operator','compound_coordinator'],
+      'COMPOUND':        ['compound_scheduler','production_coordinator'],
+      'PROCUREMENT':     ['procurement','demand_supply'],
+      'DEMAND/SUPPLY':   ['demand_supply','procurement'],
+      'LEADERSHIP':      ['leadership'],
+      'MAINTENANCE':     ['maintenance'],
+      'QC':              ['qc_team']
+    };
+    HOC_EVENTS && HOC_EVENTS.fire('alert_'+team.toLowerCase().replace(/[^a-z]/g,'_'), {
+      batch: id,
+      source: 'compound_coordinator',
+      message: 'Alert sent to ' + team + ' team',
+      team: team
+    }, 'warning', targetMap[team] || ['all']);
+  } catch(e){}
   renderAll();
 }
 
@@ -824,6 +886,25 @@ function saveVerification(){
     notes:document.getElementById('v-notes').value,
     blocked:isBlocked,ts:new Date().toISOString()
   });
+  // Fire event for any shortage or block
+  try {
+    if(isBlocked || currentShortages.length){
+      HOC_EVENTS && HOC_EVENTS.fire('material_blocker', {
+        batch: activeVer.batch,
+        source: 'compound_coordinator',
+        message: 'Compound verification: '+st+(currentShortages.length?' · '+currentShortages.length+' shortage(s)':''),
+        blocker: st,
+        shortage_count: currentShortages.length,
+        first_short_item: currentShortages.length ? currentShortages[0].sku : null
+      }, isBlocked?'critical':'warning', ['procurement','demand_supply','production_coordinator','compound_scheduler']);
+    } else {
+      HOC_EVENTS && HOC_EVENTS.fire('cc_verified', {
+        batch: activeVer.batch,
+        source: 'compound_coordinator',
+        message: 'Batch verified: '+st
+      }, 'info', ['production_coordinator','compound_scheduler']);
+    }
+  } catch(e){}
   document.getElementById('vd-saved').classList.add('show');
   renderAll();renderVerify();
 }
@@ -945,7 +1026,7 @@ window.addEventListener('storage', function(e) {
   if (e.key === 'hoc_sync_v1') {
     try { renderAll(); } catch(err) {}
   }
-  if (e.key === 'hoc_upload_v1') {
+  if (e.key === 'hoc_upload_v1' || e.key === 'hoc_labor_standards_v1') {
     try { reloadBatches(); renderAll(); } catch(err) {}
   }
 });
@@ -954,4 +1035,5 @@ setInterval(function() {
   try { reloadBatches(); renderAll(); } catch(err) {}
 }, 30000);
 renderInventory();
-</script></body></html>
+</script><script src="hoc_events.js"></script>
+</body></html>

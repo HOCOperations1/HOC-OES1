@@ -398,4 +398,5 @@ window.addEventListener('load',function(){
   setInterval(function(){pullScheduleFromSupabase(function(){loadAll();renderAll();});},30000);
 });
 window.addEventListener('storage',function(e){if(e.key===UPLOAD_KEY||e.key===FLOOR_KEY){loadAll();renderAll();}});
-</script></body></html>
+</script><script src="hoc_events.js"></script>
+</body></html>

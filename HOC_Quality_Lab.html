@@ -1059,6 +1059,12 @@ function saveTest(){
                     : _M_DISP === 'HOLD'     ? 'qc_hold'
                     : 'qc_reject';
       var severity = _M_DISP === 'REJECTED' ? 'critical' : _M_DISP === 'HOLD' ? 'warning' : 'info';
+      // Notification targets by disposition
+      var targets = _M_DISP === 'RELEASED'
+        ? ['production_coordinator','production_supervisor','leadership','demand_supply']
+        : _M_DISP === 'HOLD'
+        ? ['compound_coordinator','compound_scheduler','production_coordinator','leadership']
+        : ['compound_coordinator','leadership','production_coordinator','demand_supply']; // REJECTED
       var ev = {
         event_type: eventType,
         severity:   severity,
@@ -1067,6 +1073,8 @@ function saveTest(){
         source:     'quality_lab',
         pdf_url:    pdfUrl,
         payload: {
+          targets:     targets,
+          message:     'Batch '+_CURRENT.batch+' '+_M_DISP+(body.hold_reason?' · '+body.hold_reason:'')+(body.reject_reason?' · '+body.reject_reason:''),
           tested_by:   by,
           tested_at:   body.tested_at,
           ph:          body.ph,
@@ -1301,5 +1309,6 @@ window.addEventListener('storage', function(e){
   if(e.key === FLOOR_KEY ){ loadLocal(); renderAll(); }
 });
 </script>
+<script src="hoc_events.js"></script>
 </body>
 </html>

@@ -218,6 +218,23 @@ textarea{width:100%;resize:vertical;min-height:46px;margin-top:4px}
 <!-- CONTROL TOWER -->
 <div class="page active" id="page-cmd"><div class="content">
   <div class="sync-bar" id="sync-bar"></div>
+
+  <!-- Staleness banner (shows when production data is >7 days old) -->
+  <div id="stale-banner" style="display:none;background:linear-gradient(135deg,rgba(245,158,11,.18),rgba(245,158,11,.05));border:1px solid rgba(245,158,11,.45);border-radius:8px;padding:12px 16px;margin-bottom:12px">
+    <div style="display:flex;align-items:flex-start;gap:12px">
+      <div style="font-size:20px">⏰</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700;color:#F59E0B;margin-bottom:3px">Production data may be stale</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.5" id="stale-detail">—</div>
+      </div>
+      <a href="HOC_Data_Upload_Hub.html" style="background:#F59E0B;color:#1a1207;padding:5px 12px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:700;align-self:center">Re-upload</a>
+    </div>
+  </div>
+
+  <div id="freshness-line" style="display:none;font-size:10px;color:var(--text3);margin-bottom:8px;padding:0 4px">
+    <span id="freshness-text">—</span>
+  </div>
+
   <div id="alert-area"></div>
   <div class="ct-grid" id="ct-kpis"></div>
   <div class="card">
@@ -233,6 +250,10 @@ textarea{width:100%;resize:vertical;min-height:46px;margin-top:4px}
       <div class="card-title">Line Load — Capacity vs Demand</div>
       <div id="line-load"></div>
     </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Changeover Performance <a href="HOC_Changeover_Dashboard.html" style="font-size:9px;font-weight:400;color:var(--blue);text-decoration:none;margin-left:8px">open dashboard →</a></div>
+    <div id="co-perf"></div>
   </div>
 </div></div>
 
@@ -634,7 +655,197 @@ function stepStatus(s,key){
 
 function renderAll(){
   renderSyncBar(document.getElementById('sync-bar'));
+  renderStaleness();
   renderBadges();renderAlert();renderCTKPIs();renderPipelineFlow();renderActiveRisks();renderLineLoad();
+  renderCOPerformance();
+}
+
+// ── Staleness check: read upload timestamp + show banner if >7 days ──
+function renderStaleness(){
+  var staleBanner = document.getElementById('stale-banner');
+  var freshLine   = document.getElementById('freshness-line');
+  var freshText   = document.getElementById('freshness-text');
+  if(!staleBanner || !freshLine) return;
+  try {
+    var up = JSON.parse(localStorage.getItem('hoc_upload_v1') || 'null');
+    if(!up || !up._updated || !(up.batches && up.batches.length)){
+      staleBanner.style.display = 'none';
+      freshLine.style.display = 'none';
+      return;
+    }
+    var uploadedMs = new Date(up._updated).getTime();
+    var ageMs = Date.now() - uploadedMs;
+    var ageDays = Math.floor(ageMs / 86400000);
+    var ageHours = Math.floor(ageMs / 3600000);
+    var when = new Date(up._updated).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    var ageLabel;
+    if(ageHours < 1)         ageLabel = 'just now';
+    else if(ageHours < 24)   ageLabel = ageHours + 'h ago';
+    else if(ageDays === 1)   ageLabel = 'yesterday';
+    else                     ageLabel = ageDays + ' days ago';
+
+    freshLine.style.display = 'block';
+    var col = ageDays >= 7 ? 'var(--amber)' : ageDays >= 3 ? '#cbd5e1' : 'var(--text3)';
+    freshText.innerHTML = '📅 Production schedule uploaded <span style="color:'+col+';font-weight:600">' + ageLabel + '</span> · ' + when;
+
+    if(ageDays >= 7){
+      staleBanner.style.display = 'block';
+      document.getElementById('stale-detail').innerHTML =
+        'Last upload was <strong style="color:var(--amber)">' + ageLabel + '</strong> (' + when + '). ' +
+        'KPIs, changeover predictions, and line load may not reflect what\'s actually running today. ' +
+        'Ask the planner for a fresh Production Tracker export and drop it in the Data Upload Hub.';
+    } else {
+      staleBanner.style.display = 'none';
+    }
+  } catch(e){
+    staleBanner.style.display = 'none';
+    freshLine.style.display = 'none';
+  }
+}
+
+// ── Lightweight auto-detect (safety-net version) for Leadership ──────
+// Mirrors the Changeover Dashboard's classifier so Leadership can compute
+// changeovers locally if the Data Upload Hub didn't write the auto key.
+function _ltAutoDetect(batches){
+  function parseCode(b){
+    var item = String(b.item || '').trim();
+    var formula = b.formula != null ? String(b.formula).trim() : '';
+    var m = item.match(/^[\dA-Z]+-([A-Z0-9]+)-(\d+)-(\d+)/i);
+    if(m) return { formula: m[1], size: m[2], pack: m[3] };
+    return { formula: formula || item, size: '', pack: '' };
+  }
+  function classify(p, c){
+    if(p.formula === c.formula && p.size === c.size && p.pack === c.pack) return null;
+    if(p.formula === c.formula) return { co_type:'60', target_min:60, reason:'size_change' };
+    return { co_type:'90', target_min:90, reason:'product_change' };
+  }
+  var byLine = {};
+  (batches||[]).forEach(function(b){
+    if(!b.line || !b.date) return;
+    var ln = parseInt(b.line);
+    if(!byLine[ln]) byLine[ln] = [];
+    byLine[ln].push(b);
+  });
+  var out = [];
+  Object.keys(byLine).forEach(function(line){
+    var lb = byLine[line].sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); });
+    for(var i=1; i<lb.length; i++){
+      var prev = lb[i-1], curr = lb[i];
+      var cls = classify(parseCode(prev), parseCode(curr));
+      if(!cls) continue;
+      out.push({
+        id: 'auto_L'+line+'_'+(prev.batch||'?')+'_to_'+(curr.batch||'?'),
+        source: 'auto_schedule',
+        line: parseInt(line),
+        from: prev.desc || prev.item || prev.batch,
+        to:   curr.desc || curr.item || curr.batch,
+        from_batch: prev.batch, to_batch: curr.batch,
+        scheduled_date: curr.date,
+        co_type: cls.co_type, target_min: cls.target_min, reason: cls.reason,
+        inferred_started_at:null, inferred_completed_at:null,
+        inferred_actual_min:null, inferred_status:'scheduled'
+      });
+    }
+  });
+  return out;
+}
+
+function renderCOPerformance(){
+  var el = document.getElementById('co-perf');
+  if(!el) return;
+
+  // ── Pull both live (auto-detect) + historical (Patch) data
+  var autos = [];
+  var patch = null;
+  try { autos = JSON.parse(localStorage.getItem('hoc_changeovers_auto_v1')||'[]'); } catch(e){}
+  try { patch = JSON.parse(localStorage.getItem('hoc_changeover_data_v1')||'null'); } catch(e){}
+
+  // ── Safety-net: if auto-detect is empty but the schedule has batches,
+  //   compute it on the fly so Leadership shows something useful right away.
+  if(!autos.length){
+    try {
+      var up = JSON.parse(localStorage.getItem('hoc_upload_v1')||'{}');
+      if(up.batches && up.batches.length){
+        autos = _ltAutoDetect(up.batches);
+        if(autos.length){
+          try { localStorage.setItem('hoc_changeovers_auto_v1', JSON.stringify(autos)); } catch(e){}
+        }
+      }
+    } catch(e){}
+  }
+
+  // ── Compute live stats ──
+  var todayStr = new Date().toISOString().slice(0,10);
+  var weekAgo = Date.now() - 7*86400000;
+  var coToday = 0, coWeekCompleted = 0, coWeekOverruns = 0, coNextUp = null;
+  var nowMs = Date.now();
+  var soonestSchedule = Infinity;
+  autos.forEach(function(co){
+    if(co.scheduled_date === todayStr) coToday++;
+    if(co.inferred_status === 'completed' && co.inferred_completed_at){
+      var t = new Date(co.inferred_completed_at).getTime();
+      if(t >= weekAgo){
+        coWeekCompleted++;
+        if(co.inferred_actual_min > co.target_min) coWeekOverruns++;
+      }
+    }
+    // Find soonest upcoming
+    if(co.inferred_status === 'scheduled' && co.scheduled_date){
+      var sd = new Date(co.scheduled_date + 'T00:00:00').getTime();
+      if(sd > nowMs && sd < soonestSchedule){
+        soonestSchedule = sd;
+        coNextUp = co;
+      }
+    }
+  });
+  var coWeekOverrunPct = coWeekCompleted ? Math.round(coWeekOverruns/coWeekCompleted*100) : 0;
+  var inProgress = autos.filter(function(co){ return co.inferred_status === 'in_progress'; });
+
+  // ── Compute Patch worst lines ──
+  var worstLines = [];
+  if(patch && patch.ytd_main){
+    var allLines = (patch.ytd_main||[]).concat(patch.ytd_component||[]);
+    worstLines = allLines.filter(function(l){ return l.total_loss != null; })
+      .sort(function(a,b){ return b.total_loss - a.total_loss; })
+      .slice(0, 3);
+  }
+
+  // ── Render ──
+  var hasAnyData = autos.length > 0 || (patch && patch.ytd_main);
+  if(!hasAnyData){
+    el.innerHTML = '<div style="font-size:10px;color:var(--text3);padding:8px">No changeover data yet. Upload Production Tracker for auto-detect, or Changeover Tracker (Patch) for historical YTD.</div>';
+    return;
+  }
+
+  var liveSection = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:8px">' +
+    '<div style="background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:4px;padding:6px 8px"><div style="font-size:8px;font-weight:700;color:var(--text2);text-transform:uppercase">Today</div><div style="font-size:16px;font-weight:700;color:'+(coToday?'var(--blue)':'var(--text3)')+'">'+coToday+'</div><div style="font-size:8px;color:var(--text3)">Auto-detected</div></div>' +
+    '<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:4px;padding:6px 8px"><div style="font-size:8px;font-weight:700;color:var(--text2);text-transform:uppercase">In Progress</div><div style="font-size:16px;font-weight:700;color:'+(inProgress.length?'var(--amber)':'var(--text3)')+'">'+inProgress.length+'</div><div style="font-size:8px;color:var(--text3)">Live</div></div>' +
+    '<div style="border:1px solid var(--border);border-radius:4px;padding:6px 8px"><div style="font-size:8px;font-weight:700;color:var(--text2);text-transform:uppercase">7-Day Overrun</div><div style="font-size:16px;font-weight:700;color:'+(coWeekOverrunPct>=30?'var(--red)':coWeekOverrunPct>=15?'var(--amber)':'var(--green)')+'">'+coWeekOverrunPct+'%</div><div style="font-size:8px;color:var(--text3)">'+coWeekOverruns+'/'+coWeekCompleted+' over target</div></div>' +
+    '<div style="border:1px solid var(--border);border-radius:4px;padding:6px 8px"><div style="font-size:8px;font-weight:700;color:var(--text2);text-transform:uppercase">Next Up</div><div style="font-size:11px;font-weight:700;color:var(--text)">'+(coNextUp?'L'+coNextUp.line+' · CO['+coNextUp.co_type+'m]':'—')+'</div><div style="font-size:8px;color:var(--text3)">'+(coNextUp?coNextUp.scheduled_date:'No scheduled')+'</div></div>' +
+  '</div>';
+
+  var patchSection = '';
+  if(worstLines.length){
+    patchSection = '<div style="font-size:9px;color:var(--text2);text-transform:uppercase;font-weight:700;margin:6px 0 4px">Worst Lines YTD (Patch OEE)</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        worstLines.map(function(l, i){
+          var col = i===0?'var(--red)':i===1?'var(--amber)':'var(--text2)';
+          var verdict = patch.verdicts && patch.verdicts[l.line] ? patch.verdicts[l.line].verdict : (l.status||'');
+          var vcol = String(verdict).toLowerCase().indexOf('deter')>=0?'var(--red)'
+                  : String(verdict).toLowerCase().indexOf('improv')>=0?'var(--green)'
+                  : 'var(--text3)';
+          return '<a href="HOC_Changeover_Dashboard.html" title="View Line '+l.line+' changeovers" style="flex:1;min-width:140px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:4px;padding:6px 8px;text-decoration:none;color:inherit;cursor:pointer;transition:border-color .1s,transform .1s" onmouseover="this.style.borderColor=\''+col+'66\';this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.borderColor=\'var(--border)\';this.style.transform=\'translateY(0)\'">' +
+            '<div style="font-size:9px;color:var(--text3);font-weight:700">#'+(i+1)+' Line '+l.line+'</div>' +
+            '<div style="font-size:14px;font-weight:700;color:'+col+'">'+l.total_loss.toFixed(1)+'%</div>' +
+            '<div style="font-size:8px;color:'+vcol+';font-weight:700">'+verdict+'</div>' +
+          '</a>';
+        }).join('') +
+      '</div>';
+  } else if(autos.length){
+    patchSection = '<div style="font-size:9px;color:var(--text3);padding:4px 0">Upload Patch report for YTD historical performance.</div>';
+  }
+
+  el.innerHTML = liveSection + patchSection;
 }
 
 function renderBadges(){
@@ -693,42 +904,42 @@ function renderCTKPIs(){
   const overdue=CAP_DATA.filter(b=>b.status==='OVERDUE').length;
 
   const kpis=[
-    {l:'May Cases',v:N(g['Overall May Cases']||0),s:'vs '+N(g['Need @ 90%']||0)+' goal',c:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',dot:(g['Case Balance']||0)<0?'var(--red)':'var(--green)'},
-    {l:'Case Balance',v:N(g['Case Balance']||0),s:'At 90% attainment',c:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',dot:(g['Case Balance']||0)<0?'var(--red)':'var(--green)'},
-    {l:'OEE '+oee_latest.month,v:Math.round((oee_latest.actual||0)*100)+'%',s:'Goal 60%',c:(oee_latest.actual||0)>=0.6?'var(--green)':'var(--red)',dot:(oee_latest.actual||0)>=0.6?'var(--green)':'var(--red)'},
-    {l:'Attainment '+att_latest.month,v:Math.round((att_latest.actual||0)*100)+'%',s:'Goal 90%',c:(att_latest.actual||0)>=0.9?'var(--green)':'var(--amber)',dot:(att_latest.actual||0)>=0.9?'var(--green)':'var(--amber)'},
-    {l:'Completed Batches',v:comp,s:'This period',c:'var(--green)',dot:'var(--green)'},
-    {l:'Low Yield Batches',v:low_yield,s:'<90% yield',c:low_yield>3?'var(--red)':'var(--amber)',dot:low_yield>3?'var(--red)':'var(--amber)'},
-    {l:'Blocked Batches',v:blocked,s:'Upstream stopped',c:blocked?'var(--red)':'var(--green)',dot:blocked?'var(--red)':'var(--green)'},
-    {l:'Overdue Schedule',v:overdue,s:'Past planned date',c:overdue>5?'var(--red)':'var(--amber)',dot:overdue>5?'var(--red)':'var(--amber)'},
+    {l:'May Cases',v:N(g['Overall May Cases']||0),s:'vs '+N(g['Need @ 90%']||0)+' goal',c:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',dot:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',href:'HOC_Production_Schedule.html'},
+    {l:'Case Balance',v:N(g['Case Balance']||0),s:'At 90% attainment',c:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',dot:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',href:'HOC_Schedule_Reforecast.html'},
+    {l:'OEE '+oee_latest.month,v:Math.round((oee_latest.actual||0)*100)+'%',s:'Goal 60%',c:(oee_latest.actual||0)>=0.6?'var(--green)':'var(--red)',dot:(oee_latest.actual||0)>=0.6?'var(--green)':'var(--red)',href:'HOC_Production_Supervisor.html'},
+    {l:'Attainment '+att_latest.month,v:Math.round((att_latest.actual||0)*100)+'%',s:'Goal 90%',c:(att_latest.actual||0)>=0.9?'var(--green)':'var(--amber)',dot:(att_latest.actual||0)>=0.9?'var(--green)':'var(--amber)',href:'HOC_Production_Supervisor.html'},
+    {l:'Completed Batches',v:comp,s:'This period',c:'var(--green)',dot:'var(--green)',href:'HOC_FG_Reconciliation.html'},
+    {l:'Low Yield Batches',v:low_yield,s:'<90% yield',c:low_yield>3?'var(--red)':'var(--amber)',dot:low_yield>3?'var(--red)':'var(--amber)',href:'HOC_FG_Reconciliation.html'},
+    {l:'Blocked Batches',v:blocked,s:'Upstream stopped',c:blocked?'var(--red)':'var(--green)',dot:blocked?'var(--red)':'var(--green)',href:'HOC_Compound_Coordinator.html'},
+    {l:'Overdue Schedule',v:overdue,s:'Past planned date',c:overdue>5?'var(--red)':'var(--amber)',dot:overdue>5?'var(--red)':'var(--amber)',href:'HOC_Schedule_Reforecast.html'},
   ];
   document.getElementById('ct-kpis').innerHTML=kpis.map(k=>`
-    <div class="kpi-large">
+    <a href="${k.href}" class="kpi-large" title="Click to investigate" style="text-decoration:none;color:inherit;cursor:pointer;transition:transform .1s,border-color .1s;border:1px solid transparent;display:block" onmouseover="this.style.transform='translateY(-2px)';this.style.borderColor='rgba(255,255,255,.12)'" onmouseout="this.style.transform='translateY(0)';this.style.borderColor='transparent'">
       <div class="signal-dot" style="background:${k.dot}"></div>
       <div class="kl">${k.l}</div>
       <div class="kv" style="color:${k.c}">${k.v}</div>
       <div class="ks">${k.s}</div>
-    </div>`).join('');
+    </a>`).join('');
 }
 
 function renderPipelineFlow(){
   const all=syncRead();
   const STEPS=[
-    {key:'cc', name:'Compound Coord', color:'#3B82F6', step:'1'},
-    {key:'pw', name:'Pre-Weigh',      color:'#8B5CF6', step:'2'},
-    {key:'cmpd',name:'Compound',      color:'#3B82F6', step:'3'},
-    {key:'qc', name:'QC Lab',         color:'#10B981', step:'4'},
-    {key:'pc', name:'Prod Coord',     color:'#F59E0B', step:'5'},
-    {key:'prod',name:'Production',    color:'#22C55E', step:'6'},
-    {key:'fg', name:'FG Recon',       color:'#10B981', step:'7'},
-    {key:'wh', name:'Warehouse',      color:'#F59E0B', step:'8'},
+    {key:'cc', name:'Compound Coord', color:'#3B82F6', step:'1', href:'HOC_Compound_Coordinator.html'},
+    {key:'pw', name:'Pre-Weigh',      color:'#8B5CF6', step:'2', href:'HOC_PreWeigh_Scheduler.html'},
+    {key:'cmpd',name:'Compound',      color:'#3B82F6', step:'3', href:'HOC_Compound_Scheduler_v3.html'},
+    {key:'qc', name:'QC Lab',         color:'#10B981', step:'4', href:'HOC_Quality_Lab.html'},
+    {key:'pc', name:'Prod Coord',     color:'#F59E0B', step:'5', href:'HOC_Production_Coordinator.html'},
+    {key:'prod',name:'Production',    color:'#22C55E', step:'6', href:'HOC_Production_Supervisor.html'},
+    {key:'fg', name:'FG Recon',       color:'#10B981', step:'7', href:'HOC_FG_Reconciliation.html'},
+    {key:'wh', name:'Warehouse',      color:'#F59E0B', step:'8', href:'HOC_Warehouse_Movement.html'},
   ];
   // Count batches in each step
   let h='';
   STEPS.forEach((step,i)=>{
     const count=Object.values(all).filter(s=>s[step.key]&&Object.keys(s[step.key]).length>0).length;
     const blocked=Object.values(all).filter(s=>s[step.key]&&(s[step.key].blocked||s[step.key].pw_status?.includes('ON HOLD')||s[step.key].qc_status?.includes('HOLD'))).length;
-    h+=`<div class="step-box" style="border-color:${step.color}22;background:${step.color}08">
+    h+=`<a href="${step.href}" class="step-box" title="Open ${step.name}" style="border-color:${step.color}22;background:${step.color}08;text-decoration:none;cursor:pointer;transition:transform .1s,border-color .1s" onmouseover="this.style.borderColor='${step.color}66';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='${step.color}22';this.style.transform='translateY(0)'">
       <div class="step-num" style="color:${step.color}">Step ${step.step}</div>
       <div class="step-name" style="color:${step.color}">${step.name}</div>
       <div class="step-status">
@@ -736,7 +947,7 @@ function renderPipelineFlow(){
         <span style="font-size:9px;color:var(--text3)"> active</span>
         ${blocked?`<br><span style="font-size:9px;color:var(--red)">${blocked} blocked</span>`:''}
       </div>
-    </div>`;
+    </a>`;
     if(i<STEPS.length-1) h+=`<div class="step-arrow">›</div>`;
   });
   document.getElementById('pipeline-flow').innerHTML=h;
@@ -747,20 +958,21 @@ function renderActiveRisks(){
   const risks=[];
   Object.entries(all).forEach(([id,s])=>{
     const b=BATCHES.find(x=>x.batch===id)||{};
-    if(s.cc?.blocked) risks.push({id,type:'RAW SHORT',col:'var(--red)',desc:(b.desc||'').slice(0,35)});
-    if(s.pc?.blocked) risks.push({id,type:'COMP SHORT',col:'var(--red)',desc:(b.desc||'').slice(0,35)});
-    if(s.qc?.qc_status?.includes('HOLD')) risks.push({id,type:'QC HOLD',col:'var(--amber)',desc:(b.desc||'').slice(0,35)});
+    if(s.cc?.blocked) risks.push({id,type:'RAW SHORT',col:'var(--red)',desc:(b.desc||'').slice(0,35),href:'HOC_Compound_Coordinator.html'});
+    if(s.pc?.blocked) risks.push({id,type:'COMP SHORT',col:'var(--red)',desc:(b.desc||'').slice(0,35),href:'HOC_Production_Coordinator.html'});
+    if(s.qc?.qc_status?.includes('HOLD')) risks.push({id,type:'QC HOLD',col:'var(--amber)',desc:(b.desc||'').slice(0,35),href:'HOC_Quality_Lab.html'});
   });
   FG_B.filter(b=>b.yield_status==='LOW YIELD'&&b.status==='COMPLETED').slice(0,3).forEach(b=>{
-    risks.push({id:b.batch,type:'LOW YIELD',col:'var(--amber)',desc:b.yield_pct+'% yield · '+b.desc.slice(0,25)});
+    risks.push({id:b.batch,type:'LOW YIELD',col:'var(--amber)',desc:b.yield_pct+'% yield · '+b.desc.slice(0,25),href:'HOC_FG_Reconciliation.html'});
   });
   const el=document.getElementById('active-risks');
   if(!risks.length){el.innerHTML='<div style="font-size:10px;color:var(--green);padding:8px">✓ No active risks detected</div>';return;}
-  el.innerHTML=risks.slice(0,8).map(r=>`<div class="audit-row" style="border-left-color:${r.col}">
+  el.innerHTML=risks.slice(0,8).map(r=>`<a href="${r.href}" class="audit-row" title="Open ${r.type} resolver" style="border-left-color:${r.col};text-decoration:none;color:inherit;cursor:pointer;transition:background .1s" onmouseover="this.style.background='rgba(255,255,255,.04)'" onmouseout="this.style.background='var(--bg2)'">
     <span class="ar-time" style="font-size:9px;font-weight:700;color:${r.col}">${r.type}</span>
     <span class="ar-batch">${r.id}</span>
     <span class="ar-event">${r.desc}</span>
-  </div>`).join('');
+    <span style="margin-left:auto;color:var(--text3);font-size:14px">›</span>
+  </a>`).join('');
 }
 
 function renderLineLoad(){
@@ -788,7 +1000,13 @@ function renderPipeline(){
   document.getElementById('pipeline-tbody').innerHTML=rows.slice(0,80).map(b=>{
     const s=syncGet(b.batch);
     const steps=['cc','pw','cmpd','qc','pc','prod','fg','wh'];
-    return`<tr>
+    // Choose route by current state — running → PS, blocked → relevant resolver
+    var href='HOC_Production_Schedule.html';
+    if(b.status==='RUNNING') href='HOC_Production_Supervisor.html';
+    else if(s && s.cc && s.cc.blocked) href='HOC_Compound_Coordinator.html';
+    else if(s && s.pc && s.pc.blocked) href='HOC_Production_Coordinator.html';
+    else if(s && s.qc && s.qc.qc_status && s.qc.qc_status.indexOf('HOLD')>=0) href='HOC_Quality_Lab.html';
+    return`<tr onclick="window.location.href='${href}'" style="cursor:pointer" title="Open ${href.replace('HOC_','').replace('.html','').replace(/_/g,' ')}">
       <td style="font-size:10px;font-weight:600;color:var(--text2)">${b.batch}</td>
       <td style="font-weight:700;color:var(--purple)">L${b.line}</td>
       <td>${fD(b.date)}</td>
@@ -810,16 +1028,86 @@ function renderKPIs(){
   const blocked=Object.values(all).filter(v=>(v.cc&&v.cc.blocked)||(v.pc&&v.pc.blocked)).length;
   const synced=Object.keys(all).length;
 
+  // ── On-Time Shipment (NEW): % of completed batches finished on or before scheduled date
+  var onTimeCount = 0, totalShip = 0;
+  FG_B.forEach(function(b){
+    if(b.status !== 'COMPLETED') return;
+    totalShip++;
+    if(!b.date) return;
+    // If completed (status=COMPLETED), check if today is on/before scheduled date+1day grace
+    var sched = new Date(b.date + 'T23:59:59');
+    var today = new Date();
+    if(today <= new Date(sched.getTime() + 86400000)) onTimeCount++;
+  });
+  var onTimePct = totalShip ? Math.round(onTimeCount/totalShip*100) : 0;
+
+  // ── Customer Coverage (NEW): % of unique items in schedule that have ≥1 completed/running batch
+  var itemMap = {};
+  FG_B.forEach(function(b){
+    if(!b.item) return;
+    if(!itemMap[b.item]) itemMap[b.item] = {total:0, covered:0};
+    itemMap[b.item].total++;
+    if(b.status === 'COMPLETED' || b.status === 'RUNNING') itemMap[b.item].covered++;
+  });
+  var totalItems = Object.keys(itemMap).length;
+  var coveredItems = Object.keys(itemMap).filter(function(k){ return itemMap[k].covered > 0; }).length;
+  var coveragePct = totalItems ? Math.round(coveredItems/totalItems*100) : 0;
+
+  // ── Changeover KPIs (NEW): pull auto-detect output + Patch YTD if uploaded
+  var coToday = 0, coWeekCompleted = 0, coWeekOverruns = 0, coWeekOverrunPct = 0;
+  var coYTDLoss = null, coYTDLineCount = 0;
+  try {
+    var autos = JSON.parse(localStorage.getItem('hoc_changeovers_auto_v1')||'[]');
+    // Safety net: if auto-detect was never run, compute from schedule on the fly
+    if(!autos.length){
+      try {
+        var up = JSON.parse(localStorage.getItem('hoc_upload_v1')||'{}');
+        if(up.batches && up.batches.length && typeof _ltAutoDetect === 'function'){
+          autos = _ltAutoDetect(up.batches);
+          if(autos.length){ try { localStorage.setItem('hoc_changeovers_auto_v1', JSON.stringify(autos)); } catch(e){} }
+        }
+      } catch(e){}
+    }
+    var todayStr = new Date().toISOString().slice(0,10);
+    var weekAgo = Date.now() - 7*86400000;
+    autos.forEach(function(co){
+      if(co.scheduled_date === todayStr) coToday++;
+      // Completed in last 7 days?
+      if(co.inferred_status === 'completed' && co.inferred_completed_at){
+        var t = new Date(co.inferred_completed_at).getTime();
+        if(t >= weekAgo){
+          coWeekCompleted++;
+          if(co.inferred_actual_min > co.target_min) coWeekOverruns++;
+        }
+      }
+    });
+    coWeekOverrunPct = coWeekCompleted ? Math.round(coWeekOverruns/coWeekCompleted*100) : 0;
+  } catch(e){}
+  try {
+    var patch = JSON.parse(localStorage.getItem('hoc_changeover_data_v1')||'null');
+    if(patch && patch.ytd_main){
+      var allLines = (patch.ytd_main||[]).concat(patch.ytd_component||[]);
+      var sum = 0, cnt = 0;
+      allLines.forEach(function(l){ if(l.total_loss != null){ sum += l.total_loss; cnt++; } });
+      if(cnt){ coYTDLoss = Math.round(sum/cnt*10)/10; coYTDLineCount = cnt; }
+    }
+  } catch(e){}
+
   document.getElementById('kpi-grid').innerHTML=[
-    {l:'May Cases',v:N(g['Overall May Cases']||0),s:'Act vs '+N(g['Need @ 90%']||0),c:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',dot:(g['Case Balance']||0)<0?'var(--red)':'var(--green)'},
-    {l:'Case Balance',v:N(g['Case Balance']||0),s:g['Case Recovery Signal']||'—',c:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',dot:''},
-    {l:'OEE '+oee_l.month,v:Math.round((oee_l.actual||0)*100)+'%',s:'Goal 60%',c:(oee_l.actual||0)>=0.6?'var(--green)':'var(--red)',dot:''},
-    {l:'Attainment '+att_l.month,v:Math.round((att_l.actual||0)*100)+'%',s:'Goal 90%',c:(att_l.actual||0)>=0.9?'var(--green)':'var(--amber)',dot:''},
-    {l:'Avg Yield',v:avg_yield+'%',s:comp.length+' completed batches',c:avg_yield>=95?'var(--green)':'var(--amber)',dot:''},
-    {l:'Blocked',v:blocked,s:'Upstream stopped',c:blocked?'var(--red)':'var(--green)',dot:''},
-    {l:'Open Batches',v:g['Open Remaining Batches']||0,s:'Rem hrs: '+Math.round(g['Open Remaining Hours']||0)+'h',c:'var(--text)',dot:''},
-    {l:'Floor Synced',v:synced,s:'Active updates',c:'var(--purple)',dot:''},
-  ].map(k=>`<div class="kpi-large">${k.dot?'<div class="signal-dot" style="background:'+k.dot+'"></div>':''}<div class="kl">${k.l}</div><div class="kv" style="color:${k.c}">${k.v}</div><div class="ks">${k.s}</div></div>`).join('');
+    {l:'May Cases',v:N(g['Overall May Cases']||0),s:'Act vs '+N(g['Need @ 90%']||0),c:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',dot:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',href:'HOC_Production_Schedule.html'},
+    {l:'Case Balance',v:N(g['Case Balance']||0),s:g['Case Recovery Signal']||'—',c:(g['Case Balance']||0)<0?'var(--red)':'var(--green)',dot:'',href:'HOC_Schedule_Reforecast.html'},
+    {l:'OEE '+oee_l.month,v:Math.round((oee_l.actual||0)*100)+'%',s:'Goal 60%',c:(oee_l.actual||0)>=0.6?'var(--green)':'var(--red)',dot:'',href:'HOC_Production_Supervisor.html'},
+    {l:'Attainment '+att_l.month,v:Math.round((att_l.actual||0)*100)+'%',s:'Goal 90%',c:(att_l.actual||0)>=0.9?'var(--green)':'var(--amber)',dot:'',href:'HOC_Production_Supervisor.html'},
+    {l:'Avg Yield',v:avg_yield+'%',s:comp.length+' completed batches',c:avg_yield>=95?'var(--green)':'var(--amber)',dot:'',href:'HOC_FG_Reconciliation.html'},
+    {l:'On-Time Ship',v:onTimePct+'%',s:onTimeCount+'/'+totalShip+' on schedule',c:onTimePct>=90?'var(--green)':onTimePct>=75?'var(--amber)':'var(--red)',dot:'',href:'HOC_FG_Reconciliation.html'},
+    {l:'Customer Coverage',v:coveragePct+'%',s:coveredItems+'/'+totalItems+' SKUs in flight',c:coveragePct>=80?'var(--green)':coveragePct>=60?'var(--amber)':'var(--red)',dot:'',href:'HOC_Production_Schedule.html'},
+    {l:'CO Today',v:coToday,s:'Auto-detected',c:coToday?'var(--blue)':'var(--text3)',dot:'',href:'HOC_Changeover_Dashboard.html'},
+    {l:'CO Overrun 7d',v:coWeekOverrunPct+'%',s:coWeekOverruns+'/'+coWeekCompleted+' over target',c:coWeekOverrunPct>=30?'var(--red)':coWeekOverrunPct>=15?'var(--amber)':'var(--green)',dot:'',href:'HOC_Changeover_Dashboard.html'},
+    {l:'CO OEE Loss YTD',v:coYTDLoss!=null?coYTDLoss+'%':'—',s:coYTDLoss!=null?('Patch · '+coYTDLineCount+' lines'):'Upload Patch report',c:coYTDLoss==null?'var(--text3)':coYTDLoss>=10?'var(--red)':coYTDLoss>=5?'var(--amber)':'var(--green)',dot:'',href:coYTDLoss==null?'HOC_Data_Upload_Hub.html':'HOC_Changeover_Dashboard.html'},
+    {l:'Blocked',v:blocked,s:'Upstream stopped',c:blocked?'var(--red)':'var(--green)',dot:'',href:'HOC_Compound_Coordinator.html'},
+    {l:'Open Batches',v:g['Open Remaining Batches']||0,s:'Rem hrs: '+Math.round(g['Open Remaining Hours']||0)+'h',c:'var(--text)',dot:'',href:'HOC_Production_Schedule.html'},
+    {l:'Floor Synced',v:synced,s:'Active updates',c:'var(--purple)',dot:'',href:'HOC_Production_Supervisor.html'},
+  ].map(k=>`<a href="${k.href}" class="kpi-large" title="Click to investigate" style="text-decoration:none;color:inherit;cursor:pointer;transition:transform .1s,border-color .1s;border:1px solid transparent" onmouseover="this.style.transform='translateY(-2px)';this.style.borderColor='rgba(255,255,255,.12)'" onmouseout="this.style.transform='translateY(0)';this.style.borderColor='transparent'">${k.dot?'<div class="signal-dot" style="background:'+k.dot+'"></div>':''}<div class="kl">${k.l}</div><div class="kv" style="color:${k.c}">${k.v}</div><div class="ks">${k.s}</div></a>`).join('');
 
   const lineOEE=[['1',0.589],['2',0.473],['3',0.713],['4',0.739],['5',0.603],['11',0.918]];
   document.getElementById('line-oee-chart').innerHTML=lineOEE.map(([line,oee_v])=>{
@@ -998,10 +1286,9 @@ function runSystemCheck(){
 
 renderAll();
 
-// ── Auto-refresh: sync bus watcher ──────────────────────────────────
-// Fires when another browser tab writes to the sync bus
+// ── Auto-refresh: sync bus + changeover data watcher ──────────────────
 window.addEventListener('storage', function(e) {
-  if (e.key === 'hoc_sync_v1') {
+  if (e.key === 'hoc_sync_v1' || e.key === 'hoc_changeovers_auto_v1' || e.key === 'hoc_changeover_data_v1' || e.key === 'hoc_upload_v1') {
     try { renderAll(); } catch(err) {}
   }
 });
@@ -1126,4 +1413,5 @@ __checkAuth();
 })();
 </script>
 
+<script src="hoc_events.js"></script>
 </body></html>

@@ -137,6 +137,30 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
         <div class="drop-status" id="status-pd" style="color:var(--text3)">Drop file here or click to browse</div>
       </div>
     </div>
+
+    <!-- Changeover Tracker -->
+    <div>
+      <div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">🔄 Changeover Tracker (Patch OEE)</div>
+      <div class="drop-zone" id="zone-co" onclick="document.getElementById('file-co').click()" ondragover="dragOver(event,'co')" ondragleave="dragLeave('co')" ondrop="dropFile(event,'co')">
+        <input type="file" id="file-co" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadFile(this.files[0],'co')">
+        <div class="drop-icon">🔄</div>
+        <div class="drop-title">HOC_Changeover_Tracker.xlsx</div>
+        <div class="drop-sub">Monthly Data · YTD Summary (Main + Component) · Trend Scorecard</div>
+        <div class="drop-status" id="status-co" style="color:var(--text3)">Drop file here or click to browse</div>
+      </div>
+    </div>
+
+    <!-- Fill Labor Extract (Vicinity) -->
+    <div>
+      <div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">⏱ Fill Labor Extract (Vicinity)</div>
+      <div class="drop-zone" id="zone-lb" onclick="document.getElementById('file-lb').click()" ondragover="dragOver(event,'lb')" ondragleave="dragLeave('lb')" ondrop="dropFile(event,'lb')">
+        <input type="file" id="file-lb" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadFile(this.files[0],'lb')">
+        <div class="drop-icon">⏱</div>
+        <div class="drop-title">Fill_Labor_Extract.xlsx</div>
+        <div class="drop-sub">Master labor standards by formula · Hours/LB compounding time · powers Compound forecast</div>
+        <div class="drop-status" id="status-lb" style="color:var(--text3)">Drop file here or click to browse</div>
+      </div>
+    </div>
   </div>
 
   <button class="big-btn" id="update-btn" onclick="updateAllDashboards()" disabled>
@@ -587,7 +611,82 @@ function parsePaste(){
 // ═══════════════════════════════════════════════════════════════════
 
 function checkReady() {
-  document.getElementById('update-btn').disabled = !(loaded.pt || loaded.pd);
+  document.getElementById('update-btn').disabled = !(loaded.pt || loaded.pd || loaded.co || loaded.lb);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// AUTO-DETECT CHANGEOVER ENGINE
+// Runs right after every upload so dashboards downstream see predicted
+// changeovers without needing the Changeover Dashboard to be open.
+// ═══════════════════════════════════════════════════════════════════════
+function _parseItemCodeForCO(b){
+  var item = String(b.item || '').trim();
+  var formula = b.formula != null ? String(b.formula).trim() : '';
+  var m = item.match(/^[\dA-Z]+-([A-Z0-9]+)-(\d+)-(\d+)/i);
+  if(m) return { formula: m[1], size: m[2], pack: m[3], raw: item };
+  return { formula: formula || item, size: '', pack: '', raw: item };
+}
+
+function _classifyCOType(prev, curr){
+  var p = _parseItemCodeForCO(prev);
+  var c = _parseItemCodeForCO(curr);
+  if(p.formula === c.formula && p.size === c.size && p.pack === c.pack){
+    return { co_type:'10', target_min: 10, reason:'label_lot_change' };
+  }
+  if(p.formula === c.formula){
+    return { co_type:'60', target_min: 60, reason:'size_change' };
+  }
+  return { co_type:'90', target_min: 90, reason:'product_change' };
+}
+
+function runAutoDetectChangeovers(batches){
+  if(!batches || !batches.length) return [];
+  // Preserve inferred actuals from existing auto-detect data
+  var existing = {};
+  try {
+    var prior = JSON.parse(localStorage.getItem('hoc_changeovers_auto_v1')||'[]');
+    prior.forEach(function(co){ existing[co.id] = co; });
+  } catch(e){}
+
+  var byLine = {};
+  batches.forEach(function(b){
+    if(!b.line || !b.date) return;
+    var ln = parseInt(b.line);
+    if(!byLine[ln]) byLine[ln] = [];
+    byLine[ln].push(b);
+  });
+  var out = [];
+  Object.keys(byLine).forEach(function(line){
+    var lb = byLine[line].sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); });
+    for(var i=1; i<lb.length; i++){
+      var prev = lb[i-1], curr = lb[i];
+      var cls = _classifyCOType(prev, curr);
+      if(cls.reason === 'label_lot_change') continue;
+      var id = 'auto_L'+line+'_'+(prev.batch||'?')+'_to_'+(curr.batch||'?');
+      // If we already had this auto CO with inferred data, preserve it
+      var ex = existing[id] || {};
+      out.push({
+        id: id,
+        source: 'auto_schedule',
+        line: parseInt(line),
+        from: prev.desc || prev.item || prev.batch,
+        to: curr.desc || curr.item || curr.batch,
+        from_batch: prev.batch,
+        to_batch: curr.batch,
+        from_item: prev.item || prev.formula,
+        to_item: curr.item || curr.formula,
+        scheduled_date: curr.date,
+        co_type: cls.co_type,
+        target_min: cls.target_min,
+        reason: cls.reason,
+        inferred_started_at: ex.inferred_started_at || null,
+        inferred_completed_at: ex.inferred_completed_at || null,
+        inferred_actual_min: ex.inferred_actual_min || null,
+        inferred_status: ex.inferred_status || 'scheduled'
+      });
+    }
+  });
+  return out;
 }
 
 // ── Main data extraction ──────────────────────────────────────────────
@@ -868,6 +967,176 @@ function updateAllDashboards() {
         }
       }
 
+      // ── Parse Changeover Tracker ──────────────────────────────────
+      if(loaded.co) {
+        progress('Reading Changeover Tracker (Patch OEE)...');
+        var wbCO = loaded.co.wb;
+        var changeover = { monthly: {}, ytd_main: [], ytd_component: [], months: [] };
+
+        // === Monthly Data sheet === (Line × CO Type grid by month)
+        var mSheet = wbCO.Sheets['Monthly Data'];
+        if(mSheet) {
+          var mrows = XLSX.utils.sheet_to_json(mSheet, {header:1, defval:''});
+          // Header row has months; rows are "Line N (Filler)" then CO[10/60/90] then TOTAL
+          var monthHeaders = [];
+          var currentLine = null;
+          for(var i=0; i<mrows.length; i++) {
+            var row = mrows[i];
+            if(!row || !row[0]) continue;
+            var c0 = String(row[0]).trim();
+            // Detect header row
+            if(c0 === 'Line / CO Type') {
+              // Extract month names from cols 1..5
+              for(var c=1; c<=5; c++) {
+                if(row[c]) monthHeaders.push(String(row[c]).trim());
+              }
+              continue;
+            }
+            // Detect line row e.g. "Line 1 (Filler)"
+            var lineMatch = c0.match(/^Line\s+(\d+)/i);
+            if(lineMatch && c0.indexOf('CO [') < 0) {
+              currentLine = parseInt(lineMatch[1]);
+              changeover.monthly[currentLine] = changeover.monthly[currentLine] || {co10:{}, co60:{}, co90:{}, total:{}};
+              continue;
+            }
+            if(!currentLine) continue;
+            // CO type rows
+            var typeKey = null;
+            if(c0.indexOf('10 min') >= 0 || c0.indexOf('CO [10') >= 0) typeKey = 'co10';
+            else if(c0.indexOf('60 min') >= 0 || c0.indexOf('CO [60') >= 0) typeKey = 'co60';
+            else if(c0.indexOf('90 min') >= 0 || c0.indexOf('CO [90') >= 0) typeKey = 'co90';
+            else if(c0.toUpperCase() === 'TOTAL') typeKey = 'total';
+            if(!typeKey) continue;
+            // Read values cols 1..5
+            for(var c=1; c<=5 && c-1 < monthHeaders.length; c++) {
+              var v = row[c];
+              if(v === '' || v == null) continue;
+              var num = parseFloat(String(v).replace('%',''));
+              if(!isNaN(num)) {
+                changeover.monthly[currentLine][typeKey][monthHeaders[c-1]] = num;
+              }
+            }
+          }
+          changeover.months = monthHeaders;
+        }
+
+        // === YTD Summary — Main Lines ===
+        function parseYTDSheet(sheet) {
+          if(!sheet) return [];
+          var rows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+          var out = [];
+          for(var i=0; i<rows.length; i++) {
+            var r = rows[i];
+            if(!r || !r[0]) continue;
+            var c0 = String(r[0]).trim();
+            var lm = c0.match(/^Line\s+(\d+)/i);
+            if(!lm) continue;
+            // Skip header row that says "Line"
+            if(c0 === 'Line') continue;
+            function pnum(v){ if(v===''||v==null||v==='—')return null; var s=String(v).replace('%','').trim(); var n=parseFloat(s); return isNaN(n)?null:n; }
+            out.push({
+              line: parseInt(lm[1]),
+              oee: pnum(r[1]),
+              co10_events: pnum(r[2]),
+              co10_loss: pnum(r[3]),
+              co60_events: pnum(r[4]),
+              co60_loss: pnum(r[5]),
+              co90_events: pnum(r[6]),
+              co90_loss: pnum(r[7]),
+              total_loss: pnum(r[8]),
+              status: r[9] ? String(r[9]).trim() : ''
+            });
+          }
+          return out;
+        }
+        changeover.ytd_main      = parseYTDSheet(wbCO.Sheets['YTD Summary — Main Lines']);
+        changeover.ytd_component = parseYTDSheet(wbCO.Sheets['YTD Summary — Component']);
+
+        // === Trend Scorecard (verdicts per line) ===
+        var tSheet = wbCO.Sheets['Trend Scorecard'];
+        if(tSheet) {
+          var trows = XLSX.utils.sheet_to_json(tSheet, {header:1, defval:''});
+          var verdicts = {};
+          for(var i=0; i<trows.length; i++) {
+            var r = trows[i];
+            if(!r || !r[0]) continue;
+            var lm = String(r[0]).match(/^Line\s+(\d+)/i);
+            if(!lm) continue;
+            verdicts[parseInt(lm[1])] = {
+              jan_apr_change: r[6] || '',
+              trajectory: r[7] || '',
+              verdict: r[8] || ''
+            };
+          }
+          changeover.verdicts = verdicts;
+        }
+
+        result.changeover = changeover;
+        result.changeover_ts = ts;
+        var nMain = changeover.ytd_main.length;
+        var nComp = changeover.ytd_component.length;
+        var nMonths = changeover.months.length;
+        progress('✓ Changeover: ' + nMain + ' main + ' + nComp + ' component lines · ' + nMonths + ' months loaded', 'ok');
+
+        // Also broadcast to Supabase via a dedicated key for cross-tablet sync
+        try {
+          localStorage.setItem('hoc_changeover_data_v1', JSON.stringify(changeover));
+        } catch(e){}
+      }
+
+      // ── Parse Fill Labor Extract (Vicinity master table) ────────────
+      if(loaded.lb) {
+        progress('Reading Fill Labor Extract...');
+        var wbLB = loaded.lb.wb;
+        // Single-sheet workbook with Formula ID, Version Number, Description,
+        // Unit Procedure, Labor ID, Labor Time, Time Type columns
+        var lbSheet = wbLB.Sheets[wbLB.SheetNames[0]];
+        var lbRows = XLSX.utils.sheet_to_json(lbSheet, {defval:''});
+        // Build a formula → {comp_time, fill_time, time_type, description} map.
+        // If a formula has multiple version rows, keep the highest version number's value.
+        var laborMap = {};
+        var stats = {totalRows:0, compLabor:0, compFillLabor:0, formulas:0};
+        lbRows.forEach(function(r){
+          stats.totalRows++;
+          var f = String(r['Formula ID']||r['FormulaID']||r['Formula']||'').trim();
+          if(!f) return;
+          var laborId = String(r['Labor ID']||'').trim().toUpperCase();
+          var time = parseFloat(r['Labor Time']||0)||0;
+          var timeType = String(r['Time Type']||'').trim();
+          var version = parseInt(r['Version Number']||0)||0;
+          var desc = String(r['Description']||'').trim();
+          if(time <= 0) return;
+          if(!laborMap[f]) laborMap[f] = {formula:f, description:desc, version:-1, comp_time:null, fill_time:null, comp_time_type:'', fill_time_type:''};
+          var entry = laborMap[f];
+          // Keep latest version's data
+          if(version >= entry.version){
+            entry.version = version;
+            if(desc) entry.description = desc;
+            if(laborId === 'COMP LABOR'){
+              entry.comp_time = time;
+              entry.comp_time_type = timeType;
+              stats.compLabor++;
+            } else if(laborId === 'COMP FILL LABOR' || laborId === 'FILL LABOR'){
+              entry.fill_time = time;
+              entry.fill_time_type = timeType;
+              stats.compFillLabor++;
+            }
+          }
+        });
+        stats.formulas = Object.keys(laborMap).length;
+        result.labor_standards = laborMap;
+        result.labor_standards_ts = ts;
+        result.labor_standards_stats = stats;
+        progress('✓ Labor: ' + stats.formulas + ' formulas · ' + stats.compLabor + ' compound + ' + stats.compFillLabor + ' fill records', 'ok');
+
+        // Broadcast for cross-tablet sync via a dedicated key
+        try {
+          localStorage.setItem('hoc_labor_standards_v1', JSON.stringify({
+            standards: laborMap, stats: stats, _updated: ts
+          }));
+        } catch(e){}
+      }
+
       // ── Parse Planning Data ───────────────────────────────────────
       if(loaded.pd) {
         progress('Reading Planning Data (Vicinity)...');
@@ -911,6 +1180,20 @@ function updateAllDashboards() {
       // All other dashboards poll hoc_schedule on load and every 30s.
       // One upload here → all tablets see the same schedule.
       broadcastSchedule(result);
+
+      // ── Run Auto-Detect Engine on the new schedule ────────────────
+      // Builds hoc_changeovers_auto_v1 so Leadership/PS/Schedule see
+      // changeover predictions immediately, without needing anyone
+      // to open the Changeover Dashboard.
+      try {
+        var autoDetected = runAutoDetectChangeovers(result.batches || []);
+        localStorage.setItem('hoc_changeovers_auto_v1', JSON.stringify(autoDetected));
+        if(autoDetected.length){
+          progress('✓ Auto-detected ' + autoDetected.length + ' changeovers from schedule', 'ok');
+        }
+      } catch(adErr){
+        log('warn', 'Auto-detect skipped: ' + adErr.message);
+      }
 
       // ── Summary ───────────────────────────────────────────────────
       var batches = result.batches||[];
@@ -1029,5 +1312,6 @@ function clearAllData() {
 renderSyncBar(document.getElementById('sync-bar'));
 setInterval(function(){ renderSyncBar(document.getElementById('sync-bar')); }, 15000);
 </script>
+<script src="hoc_events.js"></script>
 </body>
 </html>

@@ -1,9 +1,10 @@
 // HOC-OES Service Worker — network-first for HTML so updates land immediately
 // Bump CACHE version any time you redeploy and want browsers to pick up changes.
-const CACHE = 'hoc-oes-v5.1-20260517';
+const CACHE = 'hoc-oes-v5.9-20260517';
 const SHELL = [
   './index.html',
   './manifest.json',
+  './hoc_events.js',
   './HOC_Data_Upload_Hub.html',
   './HOC_PreWeigh_Scheduler.html',
   './HOC_Compound_Scheduler_v3.html',
@@ -13,6 +14,7 @@ const SHELL = [
   './HOC_Production_Coordinator.html',
   './HOC_Production_Schedule.html',
   './HOC_Production_Supervisor.html',
+  './HOC_Changeover_Dashboard.html',
   './HOC_FG_Reconciliation.html',
   './HOC_Warehouse_Movement.html',
   './HOC_Procurement_Dashboard.html',
@@ -24,6 +26,7 @@ const SHELL = [
   './HOC_Gemba_Tracker.html',
   './HOC_Roll_Call.html',
   './HOC_5S_Connected.html',
+  './HOC_System_Diagnostics.html',
 ];
 
 self.addEventListener('install', e => {

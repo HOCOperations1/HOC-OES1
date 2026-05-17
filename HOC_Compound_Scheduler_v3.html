@@ -224,6 +224,26 @@ function pullScheduleFromSupabase(cb){
   }catch(e){}
 }
 
+// ── Labor standards lookup (from Fill Labor Extract upload) ──────────
+function getLaborStandard(formula){
+  if(!formula) return null;
+  try {
+    var raw = localStorage.getItem('hoc_labor_standards_v1');
+    if(!raw) return null;
+    var data = JSON.parse(raw);
+    var map = data.standards || data;
+    return map[String(formula)] || null;
+  } catch(e){ return null; }
+}
+function getBatchLaborHrs(b){
+  var std = getLaborStandard(b.formula);
+  if(!std || !std.comp_time || !b.lbs) return null;
+  return std.comp_time * b.lbs;
+}
+function hasLaborData(){
+  try { return !!localStorage.getItem('hoc_labor_standards_v1'); } catch(e){ return false; }
+}
+
 // Get schedule batches merged with floor updates
 function getBatches(monthFilter){
   var batches = (_UPLOAD.batches||[]);
@@ -367,12 +387,23 @@ function renderAll(){
     }
   }
 
+  // Compute forecast compound labor hours across open batches
+  var laborTotal = 0, laborCount = 0;
+  if(hasLaborData()){
+    openBatches.forEach(function(b){
+      if(!b.lbs) return;
+      var hrs = getBatchLaborHrs(b);
+      if(hrs != null){ laborTotal += hrs; laborCount++; }
+    });
+  }
+
   // KPI grid — match attachment 3
   document.getElementById('kpi-grid').innerHTML = [
     {l:'Total Batches', v:batches.length, s:'In schedule', c:'var(--text)'},
     {l:'Running Now',   v:running.length, s:'Active on line', c:running.length?'var(--blue)':'var(--text3)'},
     {l:'Completed',     v:done, s:'Done this period', c:'var(--green)'},
     {l:'Compound Overdue', v:overdue.length, s:'OVERDUE + CRITICAL', c:overdue.length?'var(--red)':'var(--green)'},
+    {l:'Forecast Hrs', v:hasLaborData()?Math.round(laborTotal):'—', s:hasLaborData()?(laborCount+' open batches'):'Upload Labor Extract', c:hasLaborData()?'var(--purple)':'var(--text3)'},
     {l:'QC Hold (session)', v:'0', s:'Awaiting QC decision', c:'var(--text3)'},
     {l:'My Updates', v:Object.keys(_FLOOR).length, s:'Export to sync', c:'var(--purple)'},
   ].map(function(k){return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';}).join('');
@@ -483,8 +514,9 @@ window.addEventListener('load', function(){
   setInterval(function(){ pullScheduleFromSupabase(function(){ loadAll(); renderAll(); }); }, 30000);
 });
 window.addEventListener('storage', function(e){
-  if(e.key===UPLOAD_KEY||e.key===FLOOR_KEY){ loadAll(); renderAll(); }
+  if(e.key===UPLOAD_KEY||e.key===FLOOR_KEY||e.key==='hoc_labor_standards_v1'){ loadAll(); renderAll(); }
 });
 </script>
+<script src="hoc_events.js"></script>
 </body>
 </html>

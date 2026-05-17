@@ -360,4 +360,5 @@ window.addEventListener("load",function(){
 window.addEventListener("storage",function(e){if(e.key==="hoc_upload_v1"||e.key==="hoc_floor_v1"){loadUploadedData();renderAll();}});
 setInterval(function(){loadUploadedData();renderAll();},15000);
 setInterval(function(){pullScheduleFromSupabase(function(){loadUploadedData();renderAll();});pullFloorFromSupabase(renderAll);},30000);
-</script></body></html>
+</script><script src="hoc_events.js"></script>
+</body></html>
