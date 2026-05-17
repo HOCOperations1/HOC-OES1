@@ -118,7 +118,25 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <!-- ─── QUEUE PAGE ─────────────────────────────────────────────── -->
 <div class="page active" id="page-queue"><div class="content">
   <div class="sync-bar"><span class="sync-dot"></span>HOC-OES Sync · Last update: <span id="sync-ts">—</span></div>
+
+  <!-- Will Miss escalation strip (top of page) — batches that compound is overdue/critical -->
+  <div class="card" id="ql-willmiss-card" style="display:none;border-left:3px solid var(--red);background:rgba(239,68,68,.04)">
+    <div class="card-title" style="color:var(--red)">⛔ WILL MISS — QC release will not happen in time for these batches</div>
+    <div id="ql-willmiss-strip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px"></div>
+  </div>
+
   <div class="kpi-grid" id="queue-kpis"></div>
+
+  <!-- Production by Line (attachment 7 style) — what's running, what's coming, QC load per line -->
+  <div class="card">
+    <div class="card-title"><span>Production by Line — QC Load & Coverage</span></div>
+    <div id="ql-by-line-table"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>Queue by Line</span></div>
+    <div id="queue-by-line"></div>
+  </div>
   <div class="card">
     <div class="card-title">
       <span>Awaiting QC Test <span class="muted" id="queue-count" style="font-weight:400"></span></span>
@@ -526,18 +544,31 @@ function renderKPIs(){
   var rejected = todayTests.filter(function(t){ return t.disposition === 'REJECTED'; }).length;
   var oldQ     = q.filter(function(b){ return ageHours(b.batch_date || b.date) > 24; }).length;
 
+  // Additional metrics matching attachment 8 — Will Miss, Comp Cleared, Coverage
+  var all = getEffectiveBatches();
+  var willMissCount = all.filter(function(b){
+    var cmpd = String(b.compound_status||'').toUpperCase();
+    return (cmpd.indexOf('OVERDUE')>=0 || cmpd.indexOf('CRITICAL')>=0) && b.qc_disposition !== 'RELEASED';
+  }).length;
+  var compCleared = all.filter(function(b){ return b.qc_disposition === 'RELEASED'; }).length;
+  var specsCount = (typeof _SPECS !== 'undefined' && _SPECS) ? Object.keys(_SPECS).length : 0;
+
   document.getElementById('queue-kpis').innerHTML = [
     {l:'In Queue',          v:q.length,    s:'awaiting QC',           c:q.length>5?'var(--red)':q.length>2?'var(--amber)':'var(--green)'},
+    {l:'Will Miss',         v:willMissCount, s:'Cmpd overdue → QC late', c:willMissCount?'var(--red)':'var(--green)'},
     {l:'Released Today',    v:released,    s:'send for shipping',     c:'var(--green)'},
+    {l:'Comp Cleared',      v:compCleared, s:'Ready to fill',          c:compCleared?'var(--green)':'var(--text3)'},
     {l:'Hold Today',        v:hold,        s:'back to compound',      c:hold?'var(--amber)':'var(--text3)'},
     {l:'Rejected Today',    v:rejected,    s:'NOA → R&D',             c:rejected?'var(--red)':'var(--text3)'},
     {l:'Stale (>24h)',      v:oldQ,        s:'in queue too long',     c:oldQ?'var(--red)':'var(--text3)'},
+    {l:'Specs On File',     v:specsCount,  s:'Coverage library',       c:'var(--text)'},
   ].map(function(k){
     return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';
   }).join('');
 
   // Top-bar badges
   document.getElementById('badges').innerHTML =
+    (willMissCount? '<span class="badge b-red">'+willMissCount+' WILL MISS</span>' : '') +
     (q.length     ? '<span class="badge b-pur">'+q.length+' QUEUED</span>'   : '') +
     (released     ? '<span class="badge b-grn">'+released+' RELEASED</span>' : '') +
     (hold         ? '<span class="badge b-amb">'+hold+' HOLD</span>'         : '') +
@@ -559,14 +590,24 @@ function renderQueue(){
     if(b.qc_disposition){
       priorBadge = '<span class="badge ' + (b.qc_disposition==='HOLD'?'b-amb':'b-red') + '" style="margin-left:6px">PRIOR: '+esc(b.qc_disposition)+'</span>';
     }
+    var floor = (typeof _FLOOR !== 'undefined' && _FLOOR[b.batch]) ? _FLOOR[b.batch] : {};
+    var cmpdrTag = floor.assigned ? '<span style="font-size:9px;color:var(--pri);font-weight:700">Compounder: '+esc(floor.assigned)+'</span>' : '';
+    var tankTag  = floor.tank ? '<span style="font-size:9px;color:var(--muted)">Tank '+esc(floor.tank)+'</span>' : '';
+    var lbsTag   = b.lbs ? '<span style="font-size:9px;color:var(--muted)">'+numFmt(b.lbs)+' lbs</span>' : '';
+    var ageColor = age > 24 ? 'var(--red)' : age > 8 ? 'var(--amb)' : 'var(--muted)';
+    var meta = [cmpdrTag, tankTag, lbsTag].filter(Boolean).join(' · ');
     return '<div class="queue-item '+cls+'" onclick="openTest(\''+esc(b.batch)+'\')">'+
       '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">'+
         '<div style="min-width:0;flex:1">'+
           '<div style="font-weight:700">'+esc(b.batch)+' · '+esc(b.item||'')+' '+priorBadge+'</div>'+
           '<div class="muted" style="font-size:10px">'+esc((b.desc||'').slice(0,60))+'</div>'+
+          (meta ? '<div style="margin-top:3px">'+meta+'</div>' : '') +
         '</div>'+
         '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0">'+
-          '<div class="muted" style="font-size:10px">L'+esc(b.line||'?')+' · '+fD(b.date)+'</div>'+
+          '<div style="font-size:10px;text-align:right">'+
+            '<div class="muted">L'+esc(b.line||'?')+' · '+fD(b.date)+'</div>'+
+            '<div style="color:'+ageColor+';font-weight:700">'+Math.round(age)+'h waiting</div>'+
+          '</div>'+
           '<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openTest(\''+esc(b.batch)+'\')">TEST</button>'+
         '</div>'+
       '</div>'+
@@ -1123,10 +1164,118 @@ function generateAndUploadPDF(testRow){
   });
 }
 
+// ── Queue by Line render ──────────────────────────────────────────────
+function renderQueueByLine(){
+  var el = document.getElementById('queue-by-line');
+  if(!el) return;
+  var q = getQueueBatches();
+  if(!q.length){ el.innerHTML = '<div class="empty" style="padding:14px;font-size:11px">No batches in queue</div>'; return; }
+  var byLine = {};
+  q.forEach(function(b){
+    if(!byLine[b.line]) byLine[b.line] = {count:0, oldest:0, lbs:0};
+    byLine[b.line].count++;
+    byLine[b.line].lbs += (b.lbs || 0);
+    var age = ageHours(b.batch_date || b.date);
+    if(age > byLine[b.line].oldest) byLine[b.line].oldest = age;
+  });
+  el.innerHTML = Object.keys(byLine).sort(function(a,b){return a-b;}).map(function(line){
+    var L = byLine[line];
+    var ageColor = L.oldest > 24 ? 'var(--red)' : L.oldest > 8 ? 'var(--amb)' : 'var(--text)';
+    return '<div style="display:grid;grid-template-columns:80px 1fr 100px 120px;gap:8px;padding:6px 10px;border-bottom:1px solid var(--gray-l);align-items:center;font-size:11px">' +
+      '<div style="font-weight:700;color:var(--pri)">Line '+line+'</div>' +
+      '<div class="muted">'+L.count+' batches awaiting test</div>' +
+      '<div style="text-align:right">'+(L.lbs?numFmt(L.lbs)+' lbs':'—')+'</div>' +
+      '<div style="text-align:right;color:'+ageColor+';font-weight:700">oldest: '+Math.round(L.oldest)+'h</div>' +
+    '</div>';
+  }).join('');
+}
+
+// helper for renderQueueByLine
+function numFmt(n){ if(typeof N === 'function') return N(n); return Math.round(n).toLocaleString(); }
+
+// ── Will Miss strip ─────────────────────────────────────────────────
+// Batches that compound has flagged OVERDUE/CRITICAL — QC release will likely not happen in time
+function renderWillMiss(){
+  var card = document.getElementById('ql-willmiss-card');
+  var strip = document.getElementById('ql-willmiss-strip');
+  if(!card || !strip) return;
+  var all = getEffectiveBatches();
+  var willMiss = all.filter(function(b){
+    var cmpd = String(b.compound_status||'').toUpperCase();
+    return (cmpd.indexOf('OVERDUE')>=0 || cmpd.indexOf('CRITICAL')>=0) && b.qc_disposition !== 'RELEASED';
+  });
+  if(!willMiss.length){ card.style.display='none'; return; }
+  card.style.display = 'block';
+  strip.innerHTML = willMiss.slice(0,8).map(function(b){
+    var cmpd = b.compound_status || '';
+    var risk = cmpd.indexOf('OVERDUE')>=0 ? 'OVERDUE' : 'CRITICAL';
+    return '<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:8px">' +
+      '<div style="font-size:9px;color:var(--red);font-weight:700">Ln '+(b.line||'?')+' · '+(b.batch||'')+'</div>' +
+      '<div style="font-size:11px;font-weight:600;margin:2px 0">'+String(b.description||'').slice(0,42)+'</div>' +
+      '<div style="font-size:9px;color:var(--text3)">'+(b.item||'')+' · <span style="color:var(--red);font-weight:700">'+risk+'</span></div>' +
+      '<div style="font-size:9px;color:var(--text3);margin-top:2px">QC: '+(b.qc_disposition||'—')+' · Cmpd: '+(cmpd||'—')+'</div>' +
+    '</div>';
+  }).join('');
+}
+
+// ── Production by Line table (attachment 7 style) ────────────────────
+function renderProductionByLine(){
+  var el = document.getElementById('ql-by-line-table');
+  if(!el) return;
+  var all = getEffectiveBatches();
+  // Also pull live line status from Production Supervisor
+  var lineStatus = {};
+  try { var raw = localStorage.getItem('hoc_line_status'); if(raw){ lineStatus = (JSON.parse(raw).lines)||{}; } } catch(e){}
+
+  var byLine = {};
+  all.forEach(function(b){
+    if(!b.line) return;
+    if(!byLine[b.line]) byLine[b.line] = {total:0, open:0, running:0, done:0, qc_queue:0, qc_released:0, qc_blocked:0, will_miss:0};
+    var L = byLine[b.line];
+    L.total++;
+    var st = String(b.status||'').toUpperCase();
+    if(st === 'NOT STARTED') L.open++;
+    else if(st === 'RUNNING') L.running++;
+    else if(st === 'COMPLETED') L.done++;
+    var cmpd = String(b.compound_status||'').toUpperCase();
+    var qc = b.qc_disposition || '';
+    if(qc === 'RELEASED') L.qc_released++;
+    if(qc === 'HOLD' || qc === 'REJECTED') L.qc_blocked++;
+    // In QC queue = compound-complete/filling but not yet released
+    if((cmpd.indexOf('COMPLETE')>=0 || cmpd.indexOf('FILLING')>=0) && qc !== 'RELEASED') L.qc_queue++;
+    if((cmpd.indexOf('OVERDUE')>=0 || cmpd.indexOf('CRITICAL')>=0) && qc !== 'RELEASED') L.will_miss++;
+  });
+
+  var rows = Object.keys(byLine).sort(function(a,b){return parseInt(a)-parseInt(b);}).map(function(line){
+    var L = byLine[line];
+    var ls = lineStatus[line] || {};
+    var sigColor = ls.signal && ls.signal.indexOf('CRITICAL')>=0 ? 'var(--red)' : ls.signal && ls.signal.indexOf('WATCH')>=0 ? 'var(--amber)' : ls.signal ? 'var(--green)' : 'var(--text3)';
+    var sigTxt = ls.signal ? '<div style="font-size:8px;color:'+sigColor+';font-weight:700">PS: '+ls.signal+'</div>' : '';
+    return '<tr>' +
+      '<td style="font-weight:700;color:var(--blue)">Line '+line+sigTxt+'</td>' +
+      '<td style="text-align:right">'+L.total+'</td>' +
+      '<td style="text-align:right;color:var(--text3)">'+L.open+'</td>' +
+      '<td style="text-align:right;color:'+(L.running?'var(--amber)':'var(--text3)')+';font-weight:'+(L.running?'700':'400')+'">'+L.running+'</td>' +
+      '<td style="text-align:right;color:'+(L.done?'var(--green)':'var(--text3)')+'">'+L.done+'</td>' +
+      '<td style="text-align:right;color:'+(L.qc_queue?'var(--purple)':'var(--text3)')+';font-weight:'+(L.qc_queue?'700':'400')+'">'+L.qc_queue+'</td>' +
+      '<td style="text-align:right;color:'+(L.qc_released?'var(--green)':'var(--text3)')+';font-weight:'+(L.qc_released?'700':'400')+'">'+L.qc_released+'</td>' +
+      '<td style="text-align:right;color:'+(L.qc_blocked?'var(--red)':'var(--text3)')+';font-weight:'+(L.qc_blocked?'700':'400')+'">'+L.qc_blocked+'</td>' +
+      '<td style="text-align:right;color:'+(L.will_miss?'var(--red)':'var(--text3)')+';font-weight:'+(L.will_miss?'700':'400')+'">'+L.will_miss+'</td>' +
+    '</tr>';
+  }).join('');
+
+  el.innerHTML = '<div class="tbl-wrap"><table>' +
+    '<thead><tr><th>Line</th><th style="text-align:right">Total</th><th style="text-align:right">Open</th><th style="text-align:right">Running</th><th style="text-align:right">Done</th><th style="text-align:right">QC Queue</th><th style="text-align:right">QC Released</th><th style="text-align:right">QC Blocked</th><th style="text-align:right">Will Miss</th></tr></thead>' +
+    '<tbody>'+(rows||'<tr><td colspan="9" style="text-align:center;padding:12px;color:var(--text3);font-size:11px">No batches</td></tr>')+'</tbody></table></div>';
+}
+
 // ── Master render ───────────────────────────────────────────────────
 function renderAll(){
   indexLatestQC();
   renderKPIs();
+  renderWillMiss();
+  renderProductionByLine();
+  renderQueueByLine();
   renderQueue();
   renderInTest();
 }

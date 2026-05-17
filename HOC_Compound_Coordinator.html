@@ -91,7 +91,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
       <div class="brand-sub" id="brand-sub">May 2026</div>
     </div>
   </div>
-  <nav class="nav"><button class="nb active" onclick="P('cmd')">Dashboard</button><button class="nb" onclick="P('critical')">Critical</button><button class="nb" onclick="P('all')">All Batches</button></nav>
+  <nav class="nav">
+    <button class="nb active" onclick="P('cmd')">Command Center</button>
+    <button class="nb" onclick="P('verify')">Batch Verification</button>
+    <button class="nb" onclick="P('raw')">Raw Inventory</button>
+    <button class="nb" onclick="P('alerts')">Alerts & Escalations</button>
+    <button class="nb" onclick="P('sync')">Sync</button>
+  </nav>
   <div class="badges" id="badges"></div>
 </div>
 <div class="modal" id="cc-modal" onclick="if(event.target===this)closeCmpdModal()">
@@ -114,6 +120,15 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
       </select>
     </div>
     <div class="form-row">
+      <label class="form-label">Compounder Assigned</label>
+      <input id="cc-inp-assigned" type="text" class="form-control" placeholder="e.g. Maria Lopez" list="cc-employee-list">
+      <datalist id="cc-employee-list"></datalist>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Tank #</label>
+      <input id="cc-inp-tank" type="text" class="form-control" placeholder="e.g. T-12">
+    </div>
+    <div class="form-row">
       <label class="form-label">Compound Due Date</label>
       <input id="cc-inp-due" type="date" class="form-control">
     </div>
@@ -125,6 +140,18 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
       <label class="form-label">Notes</label>
       <textarea id="cc-inp-notes" class="form-control" rows="2" placeholder="Reason, action taken..."></textarea>
     </div>
+    <div class="form-row" style="background:rgba(239,68,68,.04);border:1px solid rgba(239,68,68,.2);padding:8px;border-radius:6px">
+      <label class="form-label" style="color:var(--red)">⛔ Material Blocker — escalate to Procurement / Demand-Supply</label>
+      <select id="cc-inp-blocker" class="form-control">
+        <option value="">— No material blocker —</option>
+        <option value="RAW SHORT">RAW SHORT — formula raw material missing</option>
+        <option value="WAITING ON RM">WAITING ON RM — PO out, ETA pending</option>
+        <option value="QC HOLD ON RAW">QC HOLD ON RAW — incoming raw in QC test</option>
+        <option value="VENDOR ISSUE">VENDOR ISSUE — supplier problem</option>
+        <option value="SPEC ISSUE">SPEC ISSUE — formula needs R&amp;D rework</option>
+      </select>
+      <input id="cc-inp-blocker-note" type="text" class="form-control" placeholder="Blocker detail (which raw, ETA, etc.)" style="margin-top:6px">
+    </div>
     <button class="save-btn" onclick="saveCmpdUpdate()">💾 Save → All Dashboards</button>
   </div>
 </div><div class="page active" id="page-cmd"><div class="content"><div class="sync-bar" id="sync-bar"></div>
@@ -133,7 +160,27 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
   <div class="empty-title">No schedule loaded</div>
   <div class="empty-sub">Go to <a href="HOC_Data_Upload_Hub.html" style="color:var(--blue)">Data Upload Hub</a> and upload your Production Tracker first</div>
 </div>
-<div id="main-content"><div class="kpi-grid" id="cc-kpis"></div></div></div></div><div class="page" id="page-critical"><div class="content"><div class="card"><div class="card-title">Critical & Overdue — Action Required</div><div id="cc-critical-list"></div></div></div></div><div class="page" id="page-all"><div class="content"><div class="card"><div class="card-title">All Batches — Compound Status</div><div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Ln</th><th>Date</th><th>Description</th><th>Compound Status</th><th>Due</th><th>Shortage</th><th>Fill Status</th><th></th></tr></thead><tbody id="cc-all-tbody"></tbody></table></div></div></div></div>
+<div id="main-content"><div class="kpi-grid" id="cc-kpis"></div>
+<div class="card" style="margin-top:14px"><div class="card-title">Schedule Readiness — Can we make these batches? <span style="font-size:9px;font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0">· Click any row to verify raw materials</span></div>
+<div class="tbl-wrap"><table>
+  <thead><tr><th>Batch</th><th>Ln</th><th>Date</th><th>Description</th><th>Formula</th><th>Lbs Needed</th><th>Cmpd Status</th><th>Raw Status</th><th>Shortage</th><th>Correction Flag</th><th>CC Verified</th><th>Proceed?</th></tr></thead>
+  <tbody id="cc-readiness-tbody"></tbody>
+</table></div>
+</div>
+<div class="card" style="margin-top:14px"><div class="card-title">By Line — Open Compound Work · Line Status from Production Supervisor</div><div id="cc-by-line"></div></div>
+<div class="card" style="margin-top:14px"><div class="card-title">Next 7 Days — Compound Due</div><div id="cc-next7"></div></div>
+</div></div></div>
+
+<div class="page" id="page-verify"><div class="content"><div class="card"><div class="card-title">Batch Verification — Compound Critical & Overdue</div><div id="cc-critical-list"></div></div>
+<div class="card" style="margin-top:14px"><div class="card-title">All Batches — Compound Status</div><div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Ln</th><th>Date</th><th>Description</th><th>Compound Status</th><th>Due</th><th>Shortage</th><th>Lbs</th><th>Fill Status</th><th></th></tr></thead><tbody id="cc-all-tbody"></tbody></table></div></div></div></div>
+
+<div class="page" id="page-raw"><div class="content"><div class="card"><div class="card-title">Raw Inventory — LOW Items</div><div id="cc-raw-list"><div class="t3" style="padding:20px;text-align:center;font-size:11px">Raw material data not yet linked. Upload Planning Data in the Hub to populate.</div></div></div></div></div>
+
+<div class="page" id="page-alerts"><div class="content"><div class="card"><div class="card-title" style="color:var(--red)">⛔ Material Blockers — Escalated to Procurement / Demand-Supply</div><div id="cc-blockers-list"></div></div>
+<div class="card" style="margin-top:14px"><div class="card-title">Recently Escalated Issues</div><div id="cc-escalation-log"></div></div>
+</div></div>
+
+<div class="page" id="page-sync"><div class="content"><div class="card"><div class="card-title">Sync Status</div><div id="cc-sync-status" style="padding:14px;font-size:11px;color:var(--text2)">Supabase real-time sync · cross-device updates every 15s</div></div></div></div>
 <script>
 
 var SYNC_KEY = 'hoc_sync_v1';
@@ -334,7 +381,7 @@ function qcBadge(s){
 }
 
 
-var PM={cmd:0,critical:1,all:2};
+var PM={cmd:0,verify:1,raw:2,alerts:3,sync:4};
 function P(id){ showPage(id,PM); renderAll(); }
 var ACTIVE_BATCH = null;
 
@@ -345,43 +392,199 @@ function renderAll(){
   var empty=document.getElementById('empty-main'); var main=document.getElementById('main-content');
   if(!hasData()){ if(empty)empty.style.display='block'; if(main)main.style.display='none'; return; }
   if(empty)empty.style.display='none'; if(main)main.style.display='block';
+
   var crit   = batches.filter(function(b){ return b.cmpd&&(b.cmpd.includes('CRITICAL')||b.cmpd.includes('OVERDUE'))&&b.status!=='COMPLETED'; });
   var risk   = batches.filter(function(b){ return b.cmpd&&b.cmpd.includes('AT RISK')&&b.status!=='COMPLETED'; });
+  var ontrack = batches.filter(function(b){ return b.cmpd&&b.cmpd.includes('ON TRACK')&&b.status!=='COMPLETED'; });
   var short  = batches.filter(function(b){ return b.shortage&&b.shortage<0; });
   var done   = batches.filter(function(b){ return b.cmpd&&b.cmpd.includes('COMPLETE')&&b.status!=='COMPLETED'; });
+  var running = batches.filter(function(b){ return b.cmpd&&b.cmpd.includes('FILLING IN PROGRESS'); });
+  // Verified = batches where CC has saved a floor record (assigned compounder)
+  var verified = batches.filter(function(b){ var f=_FLOOR[b.batch]; return f && (f.assigned||f.tank); });
+  var blocked = batches.filter(function(b){ var f=_FLOOR[b.batch]; return f && f.material_blocker; });
+  var unverified = batches.length - verified.length;
+  // Material blocker events
+  var blockers = batches.filter(function(b){ var f=_FLOOR[b.batch]; return f && f.material_blocker; });
+
+  // KPI grid — match attachment 1: Total / Critical / At Risk / On Track / CC Verified / Blocked / Raw Short / Filling Now
   document.getElementById('cc-kpis').innerHTML=[
-    {l:'Critical/Overdue', v:crit.length,  s:'Need compound NOW', c:crit.length?'var(--red)':'var(--green)'},
-    {l:'At Risk',          v:risk.length,  s:'Monitor closely',   c:risk.length?'var(--amber)':'var(--green)'},
-    {l:'Formula Short',    v:short.length, s:'Material needed',   c:short.length?'var(--red)':'var(--green)'},
-    {l:'Compound Done',    v:done.length,  s:'Ready to fill',     c:done.length?'var(--green)':'var(--text3)'},
-    {l:'Total Batches',    v:batches.length,s:'May schedule',     c:'var(--text)'},
+    {l:'Total Batches', v:batches.length,   s:'With compound formula', c:'var(--text)'},
+    {l:'Critical',      v:crit.length,      s:'Overdue or critical',    c:crit.length?'var(--red)':'var(--green)'},
+    {l:'At Risk',       v:risk.length,      s:'Need attention',         c:risk.length?'var(--amber)':'var(--green)'},
+    {l:'On Track',      v:ontrack.length,   s:'Schedule OK',            c:'var(--green)'},
+    {l:'CC Verified',   v:verified.length,  s:'Ready to proceed',       c:verified.length?'var(--green)':'var(--text3)'},
+    {l:'Blocked',       v:blockers.length,  s:'Short — upstream stopped', c:blockers.length?'var(--red)':'var(--green)'},
+    {l:'Raw Short',     v:short.length,     s:'Formula shortage',       c:short.length?'var(--amber)':'var(--green)'},
+    {l:'Filling Now',   v:running.length,   s:'Active on line',         c:running.length?'var(--blue)':'var(--text3)'},
   ].map(function(k){return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';}).join('');
+
   document.getElementById('badges').innerHTML=
     (crit.length?'<span class="badge b-red">'+crit.length+' CRITICAL</span>':'')+
-    (risk.length?'<span class="badge b-amb">'+risk.length+' AT RISK</span>':'');
-  // Critical list
+    (unverified>0?'<span class="badge b-amb">'+unverified+' UNVERIFIED</span>':'')+
+    (blockers.length?'<span class="badge b-red">'+blockers.length+' BLOCKED</span>':'')+
+    '<span class="badge b-pur">'+verified.length+' SYNCED</span>';
+
+  // Schedule Readiness table — open batches sorted by date
+  var readinessTbl = document.getElementById('cc-readiness-tbody');
+  if(readinessTbl){
+    var openBatches = batches.filter(function(b){ return b.status!=='COMPLETED'; })
+      .sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); });
+    readinessTbl.innerHTML = openBatches.slice(0,50).map(function(b){
+      var floor = _FLOOR[b.batch]||{};
+      var blocked = floor.material_blocker;
+      var ccVerified = !!(floor.assigned || floor.tank);
+      var rawStatus = blocked ? '<span style="color:var(--red);font-size:9px;font-weight:700">'+floor.material_blocker+'</span>' :
+                      (b.shortage&&b.shortage<0) ? '<span style="color:var(--amber);font-size:9px;font-weight:700">SHORT '+N(Math.abs(b.shortage))+' lbs</span>' :
+                      '<span style="color:var(--green);font-size:9px;font-weight:700">OK</span>';
+      var proceedFlag = blocked ? '<span style="color:var(--red);font-weight:700">⛔ BLOCKED</span>' :
+                       (b.shortage&&b.shortage<0) ? '<span style="color:var(--amber);font-weight:700">⚠ NEEDS RM</span>' :
+                       (b.cmpd&&b.cmpd.indexOf('COMPLETE')>=0) ? '<span style="color:var(--green);font-weight:700">✓ READY</span>' :
+                       '<span style="color:var(--text3)">QUEUE</span>';
+      var correctionFlag = (b.cmpd&&b.cmpd.indexOf('CRITICAL')>=0) ? 'WILL MISS' :
+                          (b.cmpd&&b.cmpd.indexOf('OVERDUE')>=0)   ? 'OVERDUE' :
+                          (b.cmpd&&b.cmpd.indexOf('AT RISK')>=0)   ? 'AT RISK' :
+                          (b.cmpd&&b.cmpd.indexOf('ON TRACK')>=0)  ? 'ON TRACK' : '—';
+      var correctionColor = correctionFlag==='WILL MISS'||correctionFlag==='OVERDUE' ? 'var(--red)' :
+                           correctionFlag==='AT RISK' ? 'var(--amber)' :
+                           correctionFlag==='ON TRACK' ? 'var(--green)' : 'var(--text3)';
+      return '<tr onclick="openCmpdUpdate(\''+b.batch+'\')" style="cursor:pointer">' +
+        '<td style="font-weight:700">'+b.batch+'</td>' +
+        '<td>L'+b.line+'</td>' +
+        '<td>'+fD(b.date)+'</td>' +
+        '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc+'</td>' +
+        '<td>F.'+(b.formula||'—')+'</td>' +
+        '<td style="text-align:right">'+N(b.lbs||0)+'</td>' +
+        '<td>'+cmpdbadge(b.cmpd)+'</td>' +
+        '<td>'+rawStatus+'</td>' +
+        '<td style="text-align:right;color:'+(b.shortage<0?'var(--red)':'var(--text3)')+'">'+(b.shortage?N(b.shortage):'—')+'</td>' +
+        '<td><span style="font-size:9px;font-weight:700;color:'+correctionColor+'">'+correctionFlag+'</span></td>' +
+        '<td>'+(ccVerified?'<span style="font-size:9px;color:var(--green);font-weight:700">✓ '+(floor.assigned||'YES')+'</span>':'<span style="font-size:9px;color:var(--text3)">pending</span>')+'</td>' +
+        '<td>'+proceedFlag+'</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // By-Line: include LIVE line status from Production Supervisor
+  var lineStatus = {};
+  try { var raw = localStorage.getItem('hoc_line_status'); if(raw){ lineStatus = (JSON.parse(raw).lines)||{}; } } catch(e){}
+
+  var byLineEl = document.getElementById('cc-by-line');
+  if(byLineEl){
+    var byLine = {};
+    batches.forEach(function(b){
+      if(b.status==='COMPLETED') return;
+      if(!byLine[b.line]) byLine[b.line] = {crit:0, risk:0, done:0, total:0, lbs:0};
+      byLine[b.line].total++;
+      byLine[b.line].lbs += (b.lbs||0);
+      if(b.cmpd && (b.cmpd.includes('CRITICAL')||b.cmpd.includes('OVERDUE'))) byLine[b.line].crit++;
+      else if(b.cmpd && b.cmpd.includes('AT RISK')) byLine[b.line].risk++;
+      else if(b.cmpd && b.cmpd.includes('COMPLETE')) byLine[b.line].done++;
+    });
+    byLineEl.innerHTML = Object.keys(byLine).sort(function(a,b){return a-b;}).map(function(line){
+      var L = byLine[line];
+      var ls = lineStatus[line] || {};
+      var sigColor = ls.signal && ls.signal.indexOf('CRITICAL')>=0 ? 'var(--red)' : ls.signal && ls.signal.indexOf('WATCH')>=0 ? 'var(--amber)' : 'var(--green)';
+      var sigText  = ls.signal ? '<span style="font-size:9px;color:'+sigColor+';font-weight:700;margin-left:6px">PS: '+ls.signal+'</span>' : '';
+      var runTxt   = ls.running_batch ? '<span style="font-size:9px;color:var(--amber);font-weight:700;margin-left:6px">RUN: '+ls.running_batch.batch+'</span>' : '';
+      return '<div style="display:grid;grid-template-columns:80px 1fr 60px 60px 60px 90px;gap:8px;padding:6px 10px;border-bottom:1px solid var(--gray-l);align-items:center;font-size:11px">' +
+        '<div style="font-weight:700;color:var(--blue)">Line '+line+sigText+'</div>' +
+        '<div class="t3">'+L.total+' open · '+runTxt+'</div>' +
+        '<div style="text-align:right;color:'+(L.crit?'var(--red)':'var(--text3)')+';font-weight:'+(L.crit?'700':'400')+'">'+L.crit+' crit</div>' +
+        '<div style="text-align:right;color:'+(L.risk?'var(--amber)':'var(--text3)')+';font-weight:'+(L.risk?'700':'400')+'">'+L.risk+' risk</div>' +
+        '<div style="text-align:right;color:'+(L.done?'var(--green)':'var(--text3)')+';font-weight:'+(L.done?'700':'400')+'">'+L.done+' done</div>' +
+        '<div style="text-align:right;color:var(--text)">'+N(L.lbs)+' lbs</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  // Next 7 days due
+  var next7El = document.getElementById('cc-next7');
+  if(next7El){
+    var today = new Date(); today.setHours(0,0,0,0);
+    var soon = batches.filter(function(b){
+      if(b.status==='COMPLETED' || !b.cmpddue) return false;
+      var d = new Date(b.cmpddue);
+      var days = Math.floor((d - today) / 86400000);
+      return days >= 0 && days <= 7;
+    }).sort(function(a,b){ return new Date(a.cmpddue) - new Date(b.cmpddue); });
+    next7El.innerHTML = soon.length ? soon.slice(0,15).map(function(b){
+      var d = new Date(b.cmpddue);
+      var days = Math.floor((d - today) / 86400000);
+      var color = days <= 1 ? 'var(--red)' : days <= 3 ? 'var(--amber)' : 'var(--green)';
+      return '<div style="display:grid;grid-template-columns:80px 50px 1fr 90px 90px;gap:8px;padding:5px 10px;border-bottom:1px solid var(--gray-l);font-size:10px;align-items:center">' +
+        '<div style="font-weight:700">'+b.batch+'</div>' +
+        '<div class="t3">L'+b.line+'</div>' +
+        '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc.slice(0,40)+'</div>' +
+        '<div style="text-align:right;color:'+color+';font-weight:700">in '+days+'d</div>' +
+        '<div style="text-align:right">'+cmpdbadge(b.cmpd)+'</div>' +
+      '</div>';
+    }).join('') : '<div class="t3" style="text-align:center;padding:14px;font-size:11px">No compounds due in next 7 days ✓</div>';
+  }
+
+  // Critical list (Batch Verification page)
   var cel=document.getElementById('cc-critical-list');
   if(cel) cel.innerHTML=crit.length?crit.map(function(b){
+    var floor = _FLOOR[b.batch]||{};
+    var updBy = floor.assigned ? '<span style="font-size:9px;color:var(--blue);font-weight:700">· '+floor.assigned+'</span>' : '';
     return '<div style="padding:10px;margin-bottom:6px;border-radius:6px;background:rgba(239,68,68,.06);border-left:3px solid var(--red)">' +
       '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px">' +
-        '<div><div style="font-weight:700">'+b.batch+'</div><div class="t3" style="font-size:10px">'+b.desc.slice(0,50)+'</div></div>' +
+        '<div><div style="font-weight:700">'+b.batch+' '+updBy+'</div><div class="t3" style="font-size:10px">'+b.desc.slice(0,50)+'</div></div>' +
         '<button onclick="openCmpdUpdate(\''+b.batch+'\')" class="btn btn-grn" style="font-size:9px;padding:4px 10px;flex-shrink:0">UPDATE COMPOUND</button>' +
       '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+cmpdbadge(b.cmpd)+qcBadge(b.qc_status)+
         (b.cmpddue?'<span class="t3" style="font-size:9px">Due: '+fD(b.cmpddue)+'</span>':'')+
         (b.shortage<0?'<span style="font-size:9px;color:var(--red)">Short: '+N(b.shortage)+' lbs</span>':'')+
+        (b.lbs?'<span class="t3" style="font-size:9px">Need: '+N(b.lbs)+' lbs</span>':'')+
+        (b.tank?'<span class="t3" style="font-size:9px">Tank: '+b.tank+'</span>':'')+
       '</div></div>';
   }).join('') : '<div class="t3" style="text-align:center;padding:20px">No critical compound issues ✓</div>';
+
   // All batches table
   var tel=document.getElementById('cc-all-tbody');
   if(tel) tel.innerHTML=batches.map(function(b){
-    return '<tr><td style="font-weight:700">'+b.batch+'</td><td>L'+b.line+'</td><td>'+fD(b.date)+'</td>'+
+    var floor = _FLOOR[b.batch]||{};
+    var who = floor.assigned ? '<div style="font-size:9px;color:var(--blue);font-weight:700">'+floor.assigned+'</div>' : '';
+    return '<tr><td style="font-weight:700">'+b.batch+who+'</td><td>L'+b.line+'</td><td>'+fD(b.date)+'</td>'+
       '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc+'</td>'+
       '<td>'+cmpdbadge(b.cmpd)+qcBadge(b.qc_status)+'</td><td>'+fD(b.cmpddue)+'</td>'+
       '<td style="text-align:right;color:'+(b.shortage<0?'var(--red)':'var(--text3)')+'">'+N(b.shortage)+'</td>'+
+      '<td style="text-align:right">'+N(b.lbs)+'</td>'+
       '<td>'+statusBadge(b.status)+'</td>'+
       '<td><button onclick="openCmpdUpdate(\''+b.batch+'\')" class="btn" style="font-size:9px;padding:2px 8px">UPDATE</button></td></tr>';
   }).join('');
+
+  // Material Blockers list (Alerts page)
+  var blockEl = document.getElementById('cc-blockers-list');
+  if(blockEl){
+    blockEl.innerHTML = blockers.length ? blockers.map(function(b){
+      var f = _FLOOR[b.batch]||{};
+      return '<div style="padding:10px;margin-bottom:6px;border-radius:6px;background:rgba(239,68,68,.08);border-left:3px solid var(--red)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px">' +
+          '<div><div style="font-weight:700">'+b.batch+' · L'+b.line+'</div><div class="t3" style="font-size:10px">'+b.desc.slice(0,55)+'</div></div>' +
+          '<span style="font-size:9px;color:var(--red);font-weight:700;background:rgba(239,68,68,.15);padding:3px 8px;border-radius:8px">'+f.material_blocker+'</span>' +
+        '</div>' +
+        (f.blocker_note ? '<div style="font-size:10px;color:var(--text2);margin-top:4px"><b>Note:</b> '+f.blocker_note+'</div>' : '') +
+        '<div style="font-size:9px;color:var(--text3);margin-top:4px">Escalation: Procurement + Demand-Supply notified</div>' +
+      '</div>';
+    }).join('') : '<div class="t3" style="text-align:center;padding:20px;font-size:11px">No material blockers ✓</div>';
+  }
+
+  // Escalation log (last 10 blocker events from all batches)
+  var logEl = document.getElementById('cc-escalation-log');
+  if(logEl){
+    var events = [];
+    Object.keys(_FLOOR).forEach(function(k){
+      var f = _FLOOR[k];
+      if(f && f.material_blocker){
+        events.push({batch: k, blocker: f.material_blocker, note: f.blocker_note||'', ts: f._ts||0});
+      }
+    });
+    events.sort(function(a,b){ return b.ts - a.ts; });
+    logEl.innerHTML = events.length ? events.slice(0,10).map(function(e){
+      var when = e.ts ? new Date(e.ts).toLocaleString('en-US',{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}) : '—';
+      return '<div style="padding:6px 10px;border-bottom:1px solid var(--gray-l);font-size:10px"><span style="font-weight:700">'+e.batch+'</span> · <span style="color:var(--red);font-weight:700">'+e.blocker+'</span> · '+e.note+' <span class="t3" style="float:right">'+when+'</span></div>';
+    }).join('') : '<div class="t3" style="text-align:center;padding:14px;font-size:11px">No escalations logged</div>';
+  }
 }
 
 function openCmpdUpdate(batchId){
@@ -390,21 +593,56 @@ function openCmpdUpdate(batchId){
   if(!b) return;
   var floor = _FLOOR[batchId]||{};
   document.getElementById('cc-modal-title').textContent = b.batch+' · '+b.desc.slice(0,35);
-  document.getElementById('cc-inp-status').value  = floor.cmpd || b.cmpd || '';
-  document.getElementById('cc-inp-due').value     = floor.cmpddue || b.cmpddue || '';
-  document.getElementById('cc-inp-short').value   = floor.shortage != null ? floor.shortage : (b.shortage||'');
-  document.getElementById('cc-inp-notes').value   = floor.notes || '';
+  document.getElementById('cc-inp-status').value   = floor.cmpd || b.cmpd || '';
+  document.getElementById('cc-inp-due').value      = floor.cmpddue || b.cmpddue || '';
+  document.getElementById('cc-inp-short').value    = floor.shortage != null ? floor.shortage : (b.shortage||'');
+  document.getElementById('cc-inp-notes').value    = floor.notes || '';
+  document.getElementById('cc-inp-assigned').value = floor.assigned || '';
+  document.getElementById('cc-inp-tank').value     = floor.tank || b.tank || '';
+  var blockerEl = document.getElementById('cc-inp-blocker');
+  var blockerNoteEl = document.getElementById('cc-inp-blocker-note');
+  if(blockerEl) blockerEl.value = floor.material_blocker || '';
+  if(blockerNoteEl) blockerNoteEl.value = floor.blocker_note || '';
+  // Build employee dropdown from Roll Call + prior assignments
+  var names = {};
+  try {
+    var raw = localStorage.getItem('hoc_roll_call_roster');
+    if(raw){
+      var roster = JSON.parse(raw);
+      if(roster && roster.employees){
+        roster.employees.filter(function(e){ return e.dept === 'Compounding' && (e.today === 'Present' || e.today === 'Tardy' || !e.today); }).forEach(function(e){ names[e.name]=1; });
+      }
+    }
+  } catch(e){}
+  Object.keys(_FLOOR).forEach(function(k){ if(_FLOOR[k] && _FLOOR[k].assigned) names[_FLOOR[k].assigned] = 1; });
+  document.getElementById('cc-employee-list').innerHTML = Object.keys(names).sort().map(function(n){ return '<option value="'+n+'">'; }).join('');
   document.getElementById('cc-modal').classList.add('open');
 }
 function closeCmpdModal(){ document.getElementById('cc-modal').classList.remove('open'); ACTIVE_BATCH=null; }
 function saveCmpdUpdate(){
   if(!ACTIVE_BATCH) return;
+  var blocker = (document.getElementById('cc-inp-blocker')||{}).value || '';
+  var blockerNote = ((document.getElementById('cc-inp-blocker-note')||{}).value || '').trim();
   floorUpdate(ACTIVE_BATCH, {
     cmpd:     document.getElementById('cc-inp-status').value,
     cmpddue:  document.getElementById('cc-inp-due').value,
     shortage: parseFloat(document.getElementById('cc-inp-short').value)||0,
-    notes:    document.getElementById('cc-inp-notes').value
+    notes:    document.getElementById('cc-inp-notes').value,
+    assigned: document.getElementById('cc-inp-assigned').value.trim(),
+    tank:     document.getElementById('cc-inp-tank').value.trim(),
+    material_blocker: blocker,
+    blocker_note: blockerNote,
+    _ts: Date.now()
   });
+  // Publish to escalation event bus if a blocker was set — Procurement & Demand-Supply read this
+  if(blocker){
+    try {
+      var events = JSON.parse(localStorage.getItem('hoc_escalation_events')||'[]');
+      events.unshift({type:'material_blocker', source:'compound_coordinator', batch:ACTIVE_BATCH, blocker:blocker, note:blockerNote, ts:Date.now(), targets:['procurement','demand_supply','production_coordinator']});
+      events = events.slice(0,50);
+      localStorage.setItem('hoc_escalation_events', JSON.stringify(events));
+    } catch(e){}
+  }
   closeCmpdModal(); renderAll();
 }
 

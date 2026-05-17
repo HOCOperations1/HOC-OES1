@@ -91,7 +91,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
       <div class="brand-sub" id="brand-sub">May 2026</div>
     </div>
   </div>
-  <nav class="nav"><button class="nb active" onclick="P('cmd')">Dashboard</button><button class="nb" onclick="P('queue')">Full Queue</button></nav>
+  <nav class="nav">
+    <button class="nb active" onclick="P('cmd')">Command Center</button>
+    <button class="nb" onclick="P('queue')">Full Queue</button>
+    <button class="nb" onclick="P('capacity')">Capacity</button>
+    <button class="nb" onclick="P('pulls')">Chemical Pulls</button>
+    <button class="nb" onclick="P('export')">Export</button>
+  </nav>
   <div class="badges" id="badges"></div>
 </div>
 <div class="page active" id="page-cmd"><div class="content"><div class="sync-bar" id="sync-bar"></div>
@@ -100,7 +106,27 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
   <div class="empty-title">No schedule loaded</div>
   <div class="empty-sub">Go to <a href="HOC_Data_Upload_Hub.html" style="color:var(--blue)">Data Upload Hub</a> and upload your Production Tracker first</div>
 </div>
-<div id="main-content"><div class="kpi-grid" id="pw-kpis"></div></div></div></div><div class="page" id="page-queue"><div class="content"><div class="card"><div class="card-title">Pre-Weigh Queue</div><div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Ln</th><th>Sched Date</th><th>Description</th><th>Formula</th><th>Lbs Needed</th><th>Compound</th><th>Pre-Weigh</th></tr></thead><tbody id="pw-tbody"></tbody></table></div></div></div></div>
+<div id="main-content">
+  <div class="card" id="pw-overdue-card" style="display:none;border-left:3px solid var(--red);background:rgba(239,68,68,.04)">
+    <div class="card-title" style="color:var(--red)">⛔ Pre-Weigh Overdue — Compound Cannot Start Without These</div>
+    <div id="pw-overdue-strip" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+  </div>
+  <div style="padding:6px 14px;font-size:10px;color:var(--text3)" id="pw-context-line">Generated: — · Pre-weigh operators: — · Capacity: — batches/day</div>
+  <div class="kpi-grid" id="pw-kpis"></div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">Pre-Weigh Due — Next 5 Days <span style="font-size:9px;font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0">· Today column includes all overdue</span></div>
+    <div id="pw-5day" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px"></div>
+  </div>
+</div>
+</div></div>
+
+<div class="page" id="page-queue"><div class="content"><div class="card"><div class="card-title">Pre-Weigh Queue — Full</div><div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Ln</th><th>Sched Date</th><th>Description</th><th>Formula</th><th>Lbs Needed</th><th>Compound</th><th>Pre-Weigh</th></tr></thead><tbody id="pw-tbody"></tbody></table></div></div></div></div>
+
+<div class="page" id="page-capacity"><div class="content"><div class="card"><div class="card-title">Capacity Planning</div><div id="pw-capacity-content"><div class="t3" style="padding:14px;font-size:11px">Operator hours · batches per day · capacity vs demand</div></div></div></div></div>
+
+<div class="page" id="page-pulls"><div class="content"><div class="card"><div class="card-title">Chemical Pulls — Today's Pre-Weigh Sheets</div><div id="pw-pulls-content"><div class="t3" style="padding:14px;font-size:11px">Today's chemical pull list (printable)</div></div></div></div></div>
+
+<div class="page" id="page-export"><div class="content"><div class="card"><div class="card-title">Export / Sync</div><div style="padding:14px;font-size:11px;color:var(--text2)">Push to Compound Coordinator runs every 15s</div></div></div></div>
 <script>
 
 var SYNC_KEY = 'hoc_sync_v1';
@@ -295,7 +321,7 @@ function cmpdbadge(s){
 }
 
 
-var PM={cmd:0,queue:1};
+var PM={cmd:0,queue:1,capacity:2,pulls:3,export:4};
 function P(id){ showPage(id,PM); renderAll(); }
 
 function renderAll(){
@@ -304,22 +330,130 @@ function renderAll(){
   var empty=document.getElementById('empty-main'); var main=document.getElementById('main-content');
   if(!hasData()){ if(empty)empty.style.display='block'; if(main)main.style.display='none'; return; }
   if(empty)empty.style.display='none'; if(main)main.style.display='block';
-  var queue = getMayBatches().filter(function(b){ return b.status==='NOT STARTED'||b.status==='RUNNING'; })
-    .sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); });
-  var done  = queue.filter(function(b){ return b.pw_done; }).length;
-  var today = new Date().toISOString().slice(0,10);
-  var due_today = queue.filter(function(b){ return b.date===today; }).length;
+
+  // PW staging horizon: PW must be done 6 days BEFORE compound due (per Excel logic)
+  // We'll compute pw_due as cmpd_due - 6 days when available, otherwise just use cmpd_due-6d
+  function pwDue(b){
+    if(!b.cmpddue) return null;
+    var d = new Date(b.cmpddue+'T12:00:00');
+    d.setDate(d.getDate() - 6);
+    return d.toISOString().slice(0,10);
+  }
+  var todayStr = new Date().toISOString().slice(0,10);
+  var queue = getMayBatches().filter(function(b){ return b.status!=='COMPLETED'; }).map(function(b){
+    var pdue = pwDue(b);
+    var compoundOverdue = b.cmpd && (b.cmpd.indexOf('OVERDUE')>=0||b.cmpd.indexOf('CRITICAL')>=0);
+    return Object.assign({}, b, {pw_due: pdue, pw_overdue: pdue && pdue < todayStr && !b.pw_done, _compound_overdue: compoundOverdue});
+  }).sort(function(a,b){
+    var ad = a.pw_due || '9999'; var bd = b.pw_due || '9999';
+    return ad.localeCompare(bd);
+  });
+
+  var overdue = queue.filter(function(b){ return b.pw_overdue; });
+  var critical = queue.filter(function(b){ return b.pw_due === todayStr && !b.pw_done; });
+  var urgent = queue.filter(function(b){
+    if(!b.pw_due || b.pw_done) return false;
+    var d = new Date(b.pw_due+'T12:00:00');
+    var t = new Date(todayStr+'T12:00:00');
+    var diff = Math.floor((d - t)/86400000);
+    return diff > 0 && diff <= 2;
+  });
+  var complete = queue.filter(function(b){ return b.pw_done; });
+  var totalHrs = queue.reduce(function(s,b){ return s + (b.pb_hrs || 3); }, 0);
+
+  // Overdue strip
+  var stripCard = document.getElementById('pw-overdue-card');
+  var strip = document.getElementById('pw-overdue-strip');
+  if(strip){
+    var od = overdue.slice(0,6);
+    if(od.length){
+      stripCard.style.display = 'block';
+      strip.innerHTML = od.map(function(b){
+        var ovr = b._compound_overdue ? 'OVERDUE' : 'CRITICAL';
+        return '<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:8px;min-width:200px;flex:1">' +
+          '<div style="font-size:9px;color:var(--red);font-weight:700">'+b.batch+' · Line '+b.line+'</div>' +
+          '<div style="font-size:11px;font-weight:600;margin:3px 0">'+b.desc.slice(0,55)+'</div>' +
+          '<div style="font-size:9px;color:var(--text3)">PW due: '+fD(b.pw_due)+' · '+(b.pb_hrs||3)+'h staging · <span style="color:var(--red);font-weight:700">'+ovr+'</span></div>' +
+        '</div>';
+      }).join('');
+    } else {
+      stripCard.style.display = 'none';
+    }
+  }
+
+  // Context line
+  var ctx = document.getElementById('pw-context-line');
+  if(ctx){
+    var rosterNames = [];
+    try {
+      var raw = localStorage.getItem('hoc_roll_call_roster');
+      if(raw){
+        var roster = JSON.parse(raw);
+        if(roster && roster.employees){
+          rosterNames = roster.employees.filter(function(e){ return e.dept === 'Compounding' && (e.today === 'Present' || e.today === 'Tardy' || !e.today); }).map(function(e){ return e.name; }).slice(0,4);
+        }
+      }
+    } catch(e){}
+    ctx.textContent = 'Generated: ' + new Date().toLocaleString('en-US',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) + ' · Pre-weigh operators: ' + (rosterNames.join(', ')||'—') + ' · Capacity: 12 batches/day';
+  }
+
+  // Badges
+  document.getElementById('badges').innerHTML =
+    (overdue.length?'<span class="badge b-red">'+overdue.length+' OVERDUE</span>':'') +
+    (critical.length?'<span class="badge b-amb">'+critical.length+' CRITICAL/TODAY</span>':'') +
+    (urgent.length?'<span class="badge b-amb">'+urgent.length+' URGENT</span>':'') +
+    (complete.length?'<span class="badge b-grn">'+complete.length+' COMPLETE</span>':'');
+
+  // KPIs (matching attachment 6)
   document.getElementById('pw-kpis').innerHTML=[
-    {l:'Queue Total',    v:queue.length,  s:'Batches to pre-weigh', c:'var(--text)'},
-    {l:'Due Today',      v:due_today,     s:'Scheduled today',       c:due_today?'var(--amber)':'var(--text3)'},
-    {l:'Pre-Weigh Done', v:done,          s:'Completed this session', c:done?'var(--green)':'var(--text3)'},
+    {l:'Total Queue',     v:queue.length, s:'Batches needing pre-weigh', c:'var(--text)'},
+    {l:'Overdue',         v:overdue.length, s:'Pre-weigh past due', c:overdue.length?'var(--red)':'var(--green)'},
+    {l:'Critical / Today',v:critical.length, s:'Due now or tomorrow', c:critical.length?'var(--amber)':'var(--green)'},
+    {l:'Complete (session)', v:complete.length, s:'Pre-weigh done', c:complete.length?'var(--green)':'var(--text3)'},
+    {l:'Shortage Flags',  v:queue.filter(function(b){return b.shortage<0;}).length, s:'Short material items', c:queue.filter(function(b){return b.shortage<0;}).length?'var(--amber)':'var(--green)'},
+    {l:'Hrs This Week',   v:Math.round(totalHrs)+'h', s:'Non-planned batches', c:'var(--purple)'},
   ].map(function(k){return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';}).join('');
+
+  // 5-day grid
+  var fiveDay = document.getElementById('pw-5day');
+  if(fiveDay){
+    var today = new Date(); today.setHours(0,0,0,0);
+    var dayNames = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    var cols = [];
+    for(var i=0; i<5; i++){
+      var d = new Date(today); d.setDate(today.getDate()+i);
+      var dStr = d.toISOString().slice(0,10);
+      var label = (i===0?'SAT · TODAY':dayNames[d.getDay()]) + ' ' + (d.getMonth()+1)+'/'+d.getDate();
+      var dayItems = queue.filter(function(b){
+        if(!b.pw_due) return false;
+        if(b.pw_done) return false;
+        if(i===0){
+          return b.pw_due <= dStr; // today includes all overdue
+        }
+        return b.pw_due === dStr;
+      });
+      cols.push('<div style="background:var(--bg2);border:1px solid var(--gray-l);border-radius:6px;padding:8px;min-height:200px">' +
+        '<div style="font-size:9px;font-weight:700;color:var(--text2);letter-spacing:.06em;margin-bottom:6px">'+label+'</div>' +
+        (dayItems.length ? dayItems.slice(0,15).map(function(b){
+          var col = b.pw_overdue ? 'var(--red)' : i===0 ? 'var(--amber)' : 'var(--purple)';
+          return '<div style="background:rgba(139,92,246,.05);border:1px solid '+col+'33;border-left:2px solid '+col+';border-radius:4px;padding:5px 7px;margin-bottom:4px">' +
+            '<div style="font-size:9px;font-weight:700;color:'+col+'">'+b.batch+'</div>' +
+            '<div style="font-size:10px;font-weight:600;color:var(--text)">'+b.desc.slice(0,28)+'</div>' +
+            '<div style="font-size:9px;color:var(--text3)">Ln '+b.line+' · '+(b.pb_hrs||3)+'h</div>' +
+          '</div>';
+        }).join('') : '<div class="t3" style="font-size:10px;padding:6px">None due</div>') +
+      '</div>');
+    }
+    fiveDay.innerHTML = cols.join('');
+  }
+
+  // Full queue table
   document.getElementById('pw-tbody').innerHTML=queue.map(function(b){
     var done=b.pw_done;
     return '<tr style="'+(done?'opacity:.5':'')+'">'+
       '<td style="font-weight:700">'+b.batch+'</td><td>L'+b.line+'</td><td>'+fD(b.date)+'</td>'+
       '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc+'</td>'+
-      '<td>'+b.formula+'</td><td style="text-align:right">'+N(b.origqty)+'</td>'+
+      '<td>F.'+(b.formula||'?')+'</td><td style="text-align:right">'+N(b.lbs||b.origqty)+'</td>'+
       '<td>'+cmpdbadge(b.cmpd)+'</td>'+
       '<td>'+(done?
         '<span style="font-size:9px;font-weight:700;color:var(--green)">✓ DONE</span>':

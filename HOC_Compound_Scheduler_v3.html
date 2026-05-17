@@ -91,7 +91,14 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
       <div class="brand-sub" id="brand-sub">May 2026</div>
     </div>
   </div>
-  <nav class="nav"><button class="nb active" onclick="P('cmd')">Dashboard</button><button class="nb" onclick="P('data')">Detail</button></nav>
+  <nav class="nav">
+    <button class="nb active" onclick="P('cmd')">Command Center</button>
+    <button class="nb" onclick="P('byline')">Schedule by Line</button>
+    <button class="nb" onclick="P('all')">All Batches</button>
+    <button class="nb" onclick="P('capacity')">Pre-Batch Capacity</button>
+    <button class="nb" onclick="P('formulas')">Formula Standards</button>
+    <button class="nb" onclick="P('export')">Export / Sync</button>
+  </nav>
   <div class="badges" id="badges"></div>
 </div>
 <div class="page active" id="page-cmd"><div class="content"><div class="sync-bar" id="sync-bar"></div>
@@ -100,7 +107,28 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
   <div class="empty-title">No schedule loaded</div>
   <div class="empty-sub">Go to <a href="HOC_Data_Upload_Hub.html" style="color:var(--blue)">Data Upload Hub</a> and upload your Production Tracker first</div>
 </div>
-<div id="main-content"><div class="kpi-grid" id="kpi-grid"></div></div></div></div><div class="page" id="page-data"><div class="content"><div id="detail-content"></div></div></div>
+<div id="main-content">
+  <div class="card" id="cs-overdue-strip-card" style="display:none;border-left:3px solid var(--red);background:rgba(239,68,68,.04)">
+    <div class="card-title" style="color:var(--red)">⛔ Compound Overdue — Production Cannot Start These Batches</div>
+    <div id="cs-overdue-strip" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+  </div>
+  <div class="kpi-grid" id="kpi-grid" style="margin-top:14px"></div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">Compound Must-Complete — Next 5 Days <span style="font-size:9px;font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0">· Pull from PreWeigh dashboard, push to floor</span></div>
+    <div id="cs-5day" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px"></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">Line Status — Live from Production Supervisor</div>
+    <div id="cs-line-status"></div>
+  </div>
+</div>
+</div></div>
+
+<div class="page" id="page-byline"><div class="content"><div class="card"><div class="card-title">Schedule by Line</div><div id="cs-byline-content"></div></div></div></div>
+<div class="page" id="page-all"><div class="content"><div class="card"><div class="card-title">Full Compound Schedule</div><div id="cs-all-content"></div></div></div></div>
+<div class="page" id="page-capacity"><div class="content"><div class="card"><div class="card-title">Pre-Batch Capacity</div><div id="cs-capacity-content"><div class="t3" style="padding:14px;font-size:11px">Capacity hours by formula · live from formula standards</div></div></div></div></div>
+<div class="page" id="page-formulas"><div class="content"><div class="card"><div class="card-title">Formula Standards</div><div id="cs-formula-content"><div class="t3" style="padding:14px;font-size:11px">Formula library · cycle hours · QC hours · staging hours</div></div></div></div></div>
+<div class="page" id="page-export"><div class="content"><div class="card"><div class="card-title">Export / Sync</div><div style="padding:14px;font-size:11px;color:var(--text2)">Sync to PreWeigh dashboard and Compound Coordinator runs automatically every 15s</div></div></div></div>
 <script>
 
 var SYNC_KEY = 'hoc_sync_v1';
@@ -294,7 +322,7 @@ function cmpdbadge(s){
 }
 
 
-var PM={cmd:0,data:1};
+var PM={cmd:0,byline:1,all:2,capacity:3,formulas:4,export:5};
 function P(id){ showPage(id,PM); renderAll(); }
 function renderAll(){
   renderSyncBar(document.getElementById('sync-bar'));
@@ -303,25 +331,148 @@ function renderAll(){
   if(!hasData()){ if(empty)empty.style.display='block'; if(main)main.style.display='none'; return; }
   if(empty)empty.style.display='none'; if(main)main.style.display='block';
 
-  var batches=getMayBatches();
-  var crit=batches.filter(function(b){return b.cmpd&&(b.cmpd.includes('CRITICAL')||b.cmpd.includes('OVERDUE'))&&b.status!=='COMPLETED';}).length;
-  var od=batches.filter(function(b){return b.cmpd&&b.cmpd.includes('OVERDUE')&&b.status!=='COMPLETED';}).length;
-  document.getElementById('kpi-grid').innerHTML=[
-    {l:'Total Batches',  v:batches.length, s:'May schedule',   c:'var(--text)'},
-    {l:'Critical',       v:crit,           s:'Action needed',  c:crit?'var(--red)':'var(--green)'},
-    {l:'Overdue',        v:od,             s:'Past due date',  c:od?'var(--red)':'var(--green)'},
+  var batches = getMayBatches();
+  var openBatches = batches.filter(function(b){ return b.status!=='COMPLETED'; });
+  var overdue = openBatches.filter(function(b){ return b.cmpd && b.cmpd.indexOf('OVERDUE')>=0; });
+  var critical = openBatches.filter(function(b){ return b.cmpd && b.cmpd.indexOf('CRITICAL')>=0; });
+  var atRisk = openBatches.filter(function(b){ return b.cmpd && b.cmpd.indexOf('AT RISK')>=0; });
+  var onTrack = openBatches.filter(function(b){ return b.cmpd && b.cmpd.indexOf('ON TRACK')>=0; });
+  var running = batches.filter(function(b){ return b.status==='RUNNING' || (b.cmpd && b.cmpd.indexOf('FILLING IN PROGRESS')>=0); });
+  var completed = batches.filter(function(b){ return b.status==='COMPLETED'; });
+  var done = completed.length;
+
+  // Update badges
+  document.getElementById('badges').innerHTML =
+    (overdue.length?'<span class="badge b-red">'+overdue.length+' OVERDUE</span>':'') +
+    (atRisk.length?'<span class="badge b-amb">'+atRisk.length+' AT RISK</span>':'') +
+    (onTrack.length?'<span class="badge b-grn">'+onTrack.length+' ON TRACK</span>':'') +
+    (done?'<span class="badge" style="background:var(--gray-l);color:var(--text2)">'+done+' DONE</span>':'');
+
+  // Overdue strip (top of dashboard)
+  var stripCard = document.getElementById('cs-overdue-strip-card');
+  var strip = document.getElementById('cs-overdue-strip');
+  if(strip){
+    var od = overdue.concat(critical).slice(0,6);
+    if(od.length){
+      stripCard.style.display = 'block';
+      strip.innerHTML = od.map(function(b){
+        return '<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:8px;min-width:200px;flex:1">' +
+          '<div style="font-size:9px;color:var(--red);font-weight:700">F.'+(b.formula||'?')+' · Line '+b.line+' · '+b.batch+'</div>' +
+          '<div style="font-size:11px;font-weight:600;margin:3px 0">'+b.desc.slice(0,55)+'</div>' +
+          '<div style="font-size:9px;color:var(--text3)">Cmpd due: '+fD(b.cmpddue)+(b.shortage<0?' · '+N(b.shortage)+' shortage':'')+'</div>' +
+        '</div>';
+      }).join('');
+    } else {
+      stripCard.style.display = 'none';
+    }
+  }
+
+  // KPI grid — match attachment 3
+  document.getElementById('kpi-grid').innerHTML = [
+    {l:'Total Batches', v:batches.length, s:'In schedule', c:'var(--text)'},
+    {l:'Running Now',   v:running.length, s:'Active on line', c:running.length?'var(--blue)':'var(--text3)'},
+    {l:'Completed',     v:done, s:'Done this period', c:'var(--green)'},
+    {l:'Compound Overdue', v:overdue.length, s:'OVERDUE + CRITICAL', c:overdue.length?'var(--red)':'var(--green)'},
+    {l:'QC Hold (session)', v:'0', s:'Awaiting QC decision', c:'var(--text3)'},
+    {l:'My Updates', v:Object.keys(_FLOOR).length, s:'Export to sync', c:'var(--purple)'},
   ].map(function(k){return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';}).join('');
 
+  // 5-day Must-Complete forecast cards
+  var fiveDay = document.getElementById('cs-5day');
+  if(fiveDay){
+    var today = new Date(); today.setHours(0,0,0,0);
+    var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var cols = [];
+    for(var i=0; i<5; i++){
+      var d = new Date(today); d.setDate(today.getDate()+i);
+      var dStr = d.toISOString().slice(0,10);
+      var label = (i===0?'TODAY · ':'') + dayNames[d.getDay()].toUpperCase() + ' · ' + (d.getMonth()+1)+'/'+d.getDate();
+      var dueBatches = openBatches.filter(function(b){
+        if(!b.cmpddue) return false;
+        return b.cmpddue.slice(0,10) === dStr;
+      }).sort(function(a,b){ return (a.line||0) - (b.line||0); });
+      // For TODAY column, also include overdue (per attachment 3 note)
+      if(i===0){
+        var overdueBefore = openBatches.filter(function(b){
+          if(!b.cmpddue) return false;
+          return b.cmpddue.slice(0,10) < dStr;
+        });
+        dueBatches = overdueBefore.concat(dueBatches);
+      }
+      cols.push('<div style="background:var(--bg2);border:1px solid var(--gray-l);border-radius:6px;padding:8px;min-height:200px">' +
+        '<div style="font-size:9px;font-weight:700;color:var(--text2);letter-spacing:.06em;margin-bottom:6px">'+label+'</div>' +
+        (dueBatches.length ? dueBatches.slice(0,12).map(function(b){
+          var status = b.cmpd && b.cmpd.indexOf('OVERDUE')>=0 ? 'OVERDUE' :
+                       b.cmpd && b.cmpd.indexOf('CRITICAL')>=0 ? 'CRITICAL' :
+                       b.cmpd && b.cmpd.indexOf('AT RISK')>=0 ? 'AT RISK' :
+                       b.cmpd && b.cmpd.indexOf('NO COMPOUND')>=0 ? 'NO STD' :
+                       b.cmpd && b.cmpd.indexOf('ON TRACK')>=0 ? 'ON TRACK' : '—';
+          var sColor = status==='OVERDUE'||status==='CRITICAL' ? 'var(--red)' :
+                       status==='AT RISK' ? 'var(--amber)' :
+                       status==='ON TRACK' ? 'var(--green)' : 'var(--text3)';
+          return '<div style="background:rgba('+(status==='OVERDUE'?'239,68,68':status==='AT RISK'?'245,158,11':status==='ON TRACK'?'16,185,129':'148,163,184')+',.08);border-left:2px solid '+sColor+';border-radius:4px;padding:5px 7px;margin-bottom:4px">' +
+            '<div style="font-size:9px;font-weight:700;color:'+sColor+'">'+status+'</div>' +
+            '<div style="font-size:10px;font-weight:600;color:var(--text)">'+b.desc.slice(0,30)+'</div>' +
+            '<div style="font-size:9px;color:var(--text3)">F.'+(b.formula||'?')+' · Ln '+b.line+'</div>' +
+          '</div>';
+        }).join('') : '<div class="t3" style="font-size:10px;padding:6px">None due</div>') +
+      '</div>');
+    }
+    fiveDay.innerHTML = cols.join('');
+  }
 
-  var batches=getMayBatches();
-  document.getElementById('detail-content').innerHTML='<div class="card"><div class="card-title">Full Compound Schedule</div>'+
-    '<div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Ln</th><th>Date</th><th>Description</th><th>Formula</th><th>Qty</th><th>Compound Status</th><th>Cmpd Due</th><th>Fill Status</th></tr></thead><tbody>'+
-    batches.map(function(b){return '<tr><td style="font-weight:700">'+b.batch+'</td><td>L'+b.line+'</td><td>'+fD(b.date)+'</td>'+
-      '<td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc+'</td>'+
-      '<td>'+b.formula+'</td><td style="text-align:right">'+N(b.origqty)+'</td>'+
-      '<td>'+cmpdbadge(b.cmpd)+'</td><td>'+fD(b.cmpddue)+'</td><td>'+statusBadge(b.status)+'</td></tr>';}).join('')+
-    '</tbody></table></div></div>';
+  // Line Status from Production Supervisor
+  var lineStatusEl = document.getElementById('cs-line-status');
+  if(lineStatusEl){
+    var lineStatus = {};
+    try { var raw = localStorage.getItem('hoc_line_status'); if(raw){ lineStatus = (JSON.parse(raw).lines)||{}; } } catch(e){}
+    var lines = Object.keys(lineStatus).sort(function(a,b){return a-b;});
+    if(lines.length){
+      lineStatusEl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;padding:8px">' +
+        lines.map(function(l){
+          var ls = lineStatus[l];
+          var sigColor = ls.signal && ls.signal.indexOf('CRITICAL')>=0 ? 'var(--red)' : ls.signal && ls.signal.indexOf('WATCH')>=0 ? 'var(--amber)' : 'var(--green)';
+          return '<div style="background:var(--bg2);border:1px solid var(--gray-l);border-radius:6px;padding:8px;border-left:3px solid '+sigColor+'">' +
+            '<div style="font-size:11px;font-weight:700;color:var(--blue)">Line '+l+'</div>' +
+            '<div style="font-size:9px;color:'+sigColor+';font-weight:700;margin:2px 0">'+(ls.signal||'—')+'</div>' +
+            '<div style="font-size:9px;color:var(--text3)">OEE '+Math.round((ls.oee||0)*100)+'% · '+ls.open_count+' open · '+ls.done_count+' done</div>' +
+            (ls.running_batch ? '<div style="font-size:9px;color:var(--amber);font-weight:700;margin-top:3px">RUN: '+ls.running_batch.batch+'</div>' : '') +
+          '</div>';
+        }).join('') + '</div>';
+    } else {
+      lineStatusEl.innerHTML = '<div class="t3" style="padding:14px;font-size:11px;text-align:center">Line status will appear here once Production Supervisor publishes (open it once)</div>';
+    }
+  }
 
+  // Schedule by line page
+  var byLineEl = document.getElementById('cs-byline-content');
+  if(byLineEl){
+    var byLine = {};
+    batches.forEach(function(b){ if(!byLine[b.line]) byLine[b.line]=[]; byLine[b.line].push(b); });
+    byLineEl.innerHTML = Object.keys(byLine).sort(function(a,b){return a-b;}).map(function(line){
+      var lb = byLine[line];
+      return '<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:6px">Line '+line+' · '+lb.length+' batches</div>' +
+        '<div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Date</th><th>Description</th><th>Formula</th><th>Qty</th><th>Cmpd</th><th>Due</th><th>Fill</th></tr></thead><tbody>' +
+        lb.map(function(b){
+          return '<tr><td style="font-weight:700">'+b.batch+'</td><td>'+fD(b.date)+'</td>' +
+            '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc+'</td>' +
+            '<td>F.'+(b.formula||'?')+'</td><td style="text-align:right">'+N(b.origqty)+'</td>' +
+            '<td>'+cmpdbadge(b.cmpd)+'</td><td>'+fD(b.cmpddue)+'</td><td>'+statusBadge(b.status)+'</td></tr>';
+        }).join('') + '</tbody></table></div></div>';
+    }).join('');
+  }
+
+  // All batches page
+  var allEl = document.getElementById('cs-all-content');
+  if(allEl){
+    allEl.innerHTML = '<div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Ln</th><th>Date</th><th>Description</th><th>Formula</th><th>Qty</th><th>Compound Status</th><th>Cmpd Due</th><th>Fill Status</th></tr></thead><tbody>' +
+      batches.map(function(b){
+        return '<tr><td style="font-weight:700">'+b.batch+'</td><td>L'+b.line+'</td><td>'+fD(b.date)+'</td>' +
+          '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.desc+'</td>' +
+          '<td>F.'+(b.formula||'?')+'</td><td style="text-align:right">'+N(b.origqty)+'</td>' +
+          '<td>'+cmpdbadge(b.cmpd)+'</td><td>'+fD(b.cmpddue)+'</td><td>'+statusBadge(b.status)+'</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
 }
 
 window.addEventListener('load', function(){

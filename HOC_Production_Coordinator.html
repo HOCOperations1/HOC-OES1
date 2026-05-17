@@ -91,7 +91,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
       <div class="brand-sub" id="brand-sub">May 2026</div>
     </div>
   </div>
-  <nav class="nav"><button class="nb active" onclick="P('cmd')">Dashboard</button><button class="nb" onclick="P('data')">Detail</button></nav>
+  <nav class="nav">
+    <button class="nb active" onclick="P('cmd')">Command Center</button>
+    <button class="nb" onclick="P('check')">Component Check</button>
+    <button class="nb" onclick="P('inv')">Inventory</button>
+    <button class="nb" onclick="P('alerts')">Alerts &amp; Escalations</button>
+    <button class="nb" onclick="P('sync')">Sync</button>
+  </nav>
   <div class="badges" id="badges"></div>
 </div>
 <div class="page active" id="page-cmd"><div class="content"><div class="sync-bar" id="sync-bar"></div>
@@ -100,7 +106,28 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
   <div class="empty-title">No schedule loaded</div>
   <div class="empty-sub">Go to <a href="HOC_Data_Upload_Hub.html" style="color:var(--blue)">Data Upload Hub</a> and upload your Production Tracker first</div>
 </div>
-<div id="main-content"><div class="kpi-grid" id="kpi-grid"></div></div></div></div><div class="page" id="page-data"><div class="content"><div id="detail-content"></div></div></div>
+<div id="main-content">
+  <div class="card" id="pc-willmiss-card" style="display:none;border-left:3px solid var(--red);background:rgba(239,68,68,.04)">
+    <div class="card-title" style="color:var(--red)">⛔ WILL MISS — Batches: Check Components NOW Before Compound Starts</div>
+    <div id="pc-willmiss-strip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px"></div>
+  </div>
+  <div class="kpi-grid" id="kpi-grid" style="margin-top:14px"></div>
+  <div class="card" style="margin-top:14px"><div class="card-title">Production by Line</div><div id="pc-by-line"></div></div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">Batch Schedule — Component Readiness Before Fill <span style="font-size:9px;font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0">· Click any row to run component check</span></div>
+    <div id="pc-readiness-content"></div>
+  </div>
+</div>
+</div></div>
+
+<div class="page" id="page-check"><div class="content"><div class="card"><div class="card-title">Component Check — Run Verification</div><div id="pc-check-content"></div></div></div></div>
+
+<div class="page" id="page-inv"><div class="content"><div class="card"><div class="card-title">LOW Inventory — Upload Planning Data to populate</div><div id="pc-inv-content"></div></div></div></div>
+
+<div class="page" id="page-alerts"><div class="content"><div class="card"><div class="card-title" style="color:var(--red)">⛔ QC-Blocked Batches</div><div id="pc-blocked-content"></div></div>
+<div class="card" style="margin-top:14px"><div class="card-title">Material Blockers from Compound Coordinator</div><div id="pc-cmpd-blockers"></div></div></div></div>
+
+<div class="page" id="page-sync"><div class="content"><div class="card"><div class="card-title">Sync Status</div><div style="padding:14px;font-size:11px;color:var(--text2)">Supabase real-time sync · cross-device updates every 15s</div></div></div></div>
 <script>
 
 var SYNC_KEY = 'hoc_sync_v1';
@@ -309,7 +336,7 @@ function qcGate(b){
 }
 
 
-var PM={cmd:0,data:1};
+var PM={cmd:0,check:1,inv:2,alerts:3,sync:4};
 function P(id){ showPage(id,PM); renderAll(); }
 function renderAll(){
   renderSyncBar(document.getElementById('sync-bar'));
@@ -320,6 +347,8 @@ function renderAll(){
 
   var batches=getMayBatches(); var low=getLowItems();
   var open=batches.filter(function(b){return b.status==='NOT STARTED';});
+  var running=batches.filter(function(b){return b.status==='RUNNING';});
+  var completed=batches.filter(function(b){return b.status==='COMPLETED';});
 
   // QC HOLD / REJECTED batches that are blocking production
   var qcBlocked = batches.filter(function(b){
@@ -328,21 +357,135 @@ function renderAll(){
     return b.qc_status === 'HOLD' || b.qc_status === 'REJECTED';
   });
   var qcReleased = batches.filter(function(b){ return b.qc_status === 'RELEASED'; });
+  var cmpdReady = batches.filter(function(b){
+    return b.cmpd && b.cmpd.indexOf('COMPLETE') >= 0 && b.status !== 'COMPLETED';
+  });
+  var cmpdCrit = batches.filter(function(b){
+    return b.cmpd && (b.cmpd.indexOf('CRITICAL') >= 0 || b.cmpd.indexOf('OVERDUE') >= 0) && b.status !== 'COMPLETED';
+  });
+  var willMiss = batches.filter(function(b){
+    return b.cmpd && b.cmpd.indexOf('OVERDUE') >= 0 && b.status !== 'COMPLETED';
+  });
 
+  // Will Miss strip (attachment 8 top section)
+  var wmCard = document.getElementById('pc-willmiss-card');
+  var wmStrip = document.getElementById('pc-willmiss-strip');
+  if(wmStrip){
+    if(willMiss.length){
+      wmCard.style.display = 'block';
+      wmStrip.innerHTML = willMiss.slice(0,8).map(function(b){
+        return '<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:8px">' +
+          '<div style="font-size:9px;color:var(--red);font-weight:700">Ln '+b.line+' · '+b.batch+'</div>' +
+          '<div style="font-size:11px;font-weight:600;margin:2px 0">'+b.desc.slice(0,42)+'</div>' +
+          '<div style="font-size:9px;color:var(--text3)">'+(b.item||'')+' · <span style="color:var(--red);font-weight:700">WILL MISS</span></div>' +
+          '<div style="font-size:9px;color:var(--text3);margin-top:2px">QC: '+(b.qc_status||'—')+' · Cmpd: '+(b.cmpd||'—')+'</div>' +
+        '</div>';
+      }).join('');
+    } else {
+      wmCard.style.display = 'none';
+    }
+  }
+
+  // KPI grid — attachment 8 style: Open / Will Miss Cmpd / Cmpd At Risk / Comp Cleared / Comp Blocked / Running / Low / Total
   document.getElementById('kpi-grid').innerHTML=[
     {l:'Open Batches',  v:open.length, s:'Need component check', c:'var(--text)'},
-    {l:'LOW Inventory', v:low.length,  s:'Net negative',         c:low.length?'var(--red)':'var(--green)'},
-    {l:'Running',       v:batches.filter(function(b){return b.status==='RUNNING';}).length,s:'Active',c:'var(--amber)'},
-    {l:'QC Released',   v:qcReleased.length, s:'Ready to fill',  c:qcReleased.length?'var(--green)':'var(--text3)'},
-    {l:'QC Blocked',    v:qcBlocked.length, s:'Hold or Reject',  c:qcBlocked.length?'var(--red)':'var(--text3)'},
+    {l:'Will Miss Cmpd', v:willMiss.length, s:'Risk: WILL MISS', c:willMiss.length?'var(--red)':'var(--green)'},
+    {l:'Cmpd At Risk', v:batches.filter(function(b){return b.cmpd&&b.cmpd.indexOf('AT RISK')>=0;}).length, s:'Watch closely', c:'var(--amber)'},
+    {l:'Comp Cleared', v:cmpdReady.length, s:'Ready to fill', c:cmpdReady.length?'var(--green)':'var(--text3)'},
+    {l:'Comp Blocked', v:qcBlocked.length, s:'Short — upstream stopped', c:qcBlocked.length?'var(--red)':'var(--green)'},
+    {l:'Running Now', v:running.length, s:'Active on floor', c:running.length?'var(--blue)':'var(--text3)'},
+    {l:'Low Components', v:low.length, s:'Below 20% coverage', c:low.length?'var(--amber)':'var(--green)'},
+    {l:'Total Components', v:'300', s:'In Vicinity inventory', c:'var(--text)'},
   ].map(function(k){return '<div class="kpi"><div class="kl">'+k.l+'</div><div class="kv" style="color:'+k.c+'">'+k.v+'</div><div class="ks">'+k.s+'</div></div>';}).join('');
 
+  // Badges in header
+  document.getElementById('badges').innerHTML =
+    (willMiss.length?'<span class="badge b-red">'+willMiss.length+' WILL MISS</span>':'') +
+    (qcReleased.length?'<span class="badge b-grn">'+qcReleased.length+' CLEARED</span>':'') +
+    '<span class="badge b-pur">SYNCED</span>';
 
-  var low=getLowItems();
-  var qcBlockedCard = qcBlocked.length ?
-    '<div class="card" style="border-left:3px solid var(--red)">' +
-      '<div class="card-title" style="color:var(--red)">⛔ QC-Blocked Batches (need attention before production can run)</div>' +
-      '<div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Item</th><th>Description</th><th>QC Status</th><th>Reason</th></tr></thead><tbody>' +
+  // By-Line summary table (attachment 7)
+  var byLine = {};
+  batches.forEach(function(b){
+    if(!byLine[b.line]) byLine[b.line] = {open:0, running:0, done:0, cmpd_ready:0, cmpd_crit:0, qc_blocked:0, total:0};
+    byLine[b.line].total++;
+    if(b.status === 'NOT STARTED') byLine[b.line].open++;
+    else if(b.status === 'RUNNING') byLine[b.line].running++;
+    else if(b.status === 'COMPLETED') byLine[b.line].done++;
+    if(b.cmpd && b.cmpd.indexOf('COMPLETE') >= 0 && b.status !== 'COMPLETED') byLine[b.line].cmpd_ready++;
+    if(b.cmpd && (b.cmpd.indexOf('CRITICAL') >= 0 || b.cmpd.indexOf('OVERDUE') >= 0) && b.status !== 'COMPLETED') byLine[b.line].cmpd_crit++;
+    if((b.qc_status === 'HOLD' || b.qc_status === 'REJECTED')) byLine[b.line].qc_blocked++;
+  });
+  var byLineEl = document.getElementById('pc-by-line');
+  if(byLineEl){
+    var byLineRows = Object.keys(byLine).sort(function(a,b){return a-b;}).map(function(line){
+      var L = byLine[line];
+      return '<tr>' +
+        '<td style="font-weight:700;color:var(--blue)">Line '+line+'</td>' +
+        '<td style="text-align:right">'+L.total+'</td>' +
+        '<td style="text-align:right;color:var(--text3)">'+L.open+'</td>' +
+        '<td style="text-align:right;color:'+(L.running?'var(--amber)':'var(--text3)')+';font-weight:'+(L.running?'700':'400')+'">'+L.running+'</td>' +
+        '<td style="text-align:right;color:'+(L.done?'var(--green)':'var(--text3)')+'">'+L.done+'</td>' +
+        '<td style="text-align:right;color:'+(L.cmpd_ready?'var(--green)':'var(--text3)')+';font-weight:'+(L.cmpd_ready?'700':'400')+'">'+L.cmpd_ready+'</td>' +
+        '<td style="text-align:right;color:'+(L.cmpd_crit?'var(--red)':'var(--text3)')+';font-weight:'+(L.cmpd_crit?'700':'400')+'">'+L.cmpd_crit+'</td>' +
+        '<td style="text-align:right;color:'+(L.qc_blocked?'var(--red)':'var(--text3)')+';font-weight:'+(L.qc_blocked?'700':'400')+'">'+L.qc_blocked+'</td>' +
+      '</tr>';
+    }).join('');
+    byLineEl.innerHTML = '<div class="tbl-wrap"><table>' +
+      '<thead><tr><th>Line</th><th style="text-align:right">Total</th><th style="text-align:right">Open</th><th style="text-align:right">Running</th><th style="text-align:right">Done</th><th style="text-align:right">Cmpd Ready</th><th style="text-align:right">Cmpd Crit</th><th style="text-align:right">QC Blocked</th></tr></thead>' +
+      '<tbody>'+byLineRows+'</tbody></table></div>';
+  }
+
+  // Batch Schedule — Component Readiness (attachment 8 table)
+  var readinessEl = document.getElementById('pc-readiness-content');
+  if(readinessEl){
+    var rows = open.concat(running).slice(0,40);
+    readinessEl.innerHTML = '<div class="tbl-wrap"><table>' +
+      '<thead><tr><th>Batch</th><th>Ln</th><th>Date</th><th>Item</th><th>Description</th><th>Status</th><th>Cmpd Risk</th><th>Comp Check</th><th>Ready?</th><th>Blocker</th></tr></thead><tbody>' +
+      rows.map(function(b){
+        var risk = b.cmpd && b.cmpd.indexOf('OVERDUE')>=0 ? 'WILL MISS' :
+                   b.cmpd && b.cmpd.indexOf('CRITICAL')>=0 ? 'WILL MISS' :
+                   b.cmpd && b.cmpd.indexOf('AT RISK')>=0 ? 'AT RISK' :
+                   b.cmpd && b.cmpd.indexOf('ON TRACK')>=0 ? 'ON TRACK' :
+                   b.cmpd && b.cmpd.indexOf('COMPLETE')>=0 ? '✓ DONE' : '—';
+        var riskColor = risk==='WILL MISS' ? 'var(--red)' : risk==='AT RISK' ? 'var(--amber)' : (risk==='ON TRACK'||risk.indexOf('DONE')>=0) ? 'var(--green)' : 'var(--text3)';
+        return '<tr style="cursor:pointer">' +
+          '<td style="font-weight:700">'+b.batch+'</td>' +
+          '<td>L'+b.line+'</td>' +
+          '<td>'+fD(b.date)+'</td>' +
+          '<td class="t3">'+(b.item||'')+'</td>' +
+          '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.desc||'')+'</td>' +
+          '<td>'+statusBadge(b.status)+'</td>' +
+          '<td><span style="font-size:9px;font-weight:700;color:'+riskColor+';padding:2px 6px;border-radius:8px;background:'+riskColor+'22;border:1px solid '+riskColor+'44">'+risk+'</span></td>' +
+          '<td class="t3" style="font-size:9px">—</td>' +
+          '<td><span style="font-size:9px;font-weight:700;color:var(--text3);background:var(--gray-l);padding:2px 8px;border-radius:8px">PENDING CHECK</span></td>' +
+          '<td>'+((b.qc_status==='HOLD'||b.qc_status==='REJECTED')?'<span style="color:var(--red);font-weight:700;font-size:10px">⛔</span>':'<span style="color:var(--text3)">—</span>')+'</td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
+  // Component Check page
+  var checkEl = document.getElementById('pc-check-content');
+  if(checkEl){
+    checkEl.innerHTML = '<div class="t3" style="padding:14px;font-size:11px">Click any batch in the Command Center readiness table to run a component check. Will display: required components, available stock, gap analysis, and recommended PO action.</div>';
+  }
+
+  // Inventory page
+  var invEl = document.getElementById('pc-inv-content');
+  if(invEl){
+    invEl.innerHTML = low.length?'<div class="tbl-wrap"><table><thead><tr><th>SKU</th><th>Description</th><th>QOH</th><th>PO Qty</th><th>Net</th></tr></thead><tbody>'+
+      low.slice(0,100).map(function(i){return '<tr><td style="font-weight:700">'+i.sku+'</td>'+
+        '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+i.descr+'</td>'+
+        '<td style="text-align:right">'+N(i.qoh)+'</td><td style="text-align:right">'+N(i.po_qty)+'</td>'+
+        '<td style="text-align:right;font-weight:700;color:var(--red)">'+N(i.net)+'</td></tr>';}).join('')+
+      '</tbody></table></div>':'<div class="t3" style="padding:20px;text-align:center">Upload Planning_Data.xlsx in the Data Upload Hub to see inventory</div>';
+  }
+
+  // Alerts page — QC Blocked + Compound Coordinator material blockers
+  var blockedEl = document.getElementById('pc-blocked-content');
+  if(blockedEl){
+    blockedEl.innerHTML = qcBlocked.length?'<div class="tbl-wrap"><table><thead><tr><th>Batch</th><th>Item</th><th>Description</th><th>QC Status</th><th>Reason</th></tr></thead><tbody>' +
       qcBlocked.map(function(b){
         var c = b.qc_status === 'REJECTED' ? 'var(--red)' : 'var(--amber)';
         var reason = (_FLOOR[b.batch] || {});
@@ -350,23 +493,23 @@ function renderAll(){
           '<td>'+(b.item||'')+'</td>' +
           '<td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.desc||'')+'</td>' +
           '<td><span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;background:'+c+'22;color:'+c+';border:1px solid '+c+'44">'+b.qc_status+'</span></td>' +
-          '<td class="t3" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(reason.qc_hold_reason || reason.qc_reject_reason || '')+'</td>' +
+          '<td class="t3" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(reason.qc_hold_reason || reason.qc_reject_reason || reason.notes || '')+'</td>' +
         '</tr>';
       }).join('') +
-      '</tbody></table></div>' +
-    '</div>'
-  : '';
+      '</tbody></table></div>' : '<div class="t3" style="padding:20px;text-align:center;font-size:11px">No QC-blocked batches ✓</div>';
+  }
 
-  document.getElementById('detail-content').innerHTML = qcBlockedCard +
-    '<div class="card"><div class="card-title">LOW Inventory — Upload Planning Data to populate</div>'+
-    (low.length?'<div class="tbl-wrap"><table><thead><tr><th>SKU</th><th>Description</th><th>QOH</th><th>PO Qty</th><th>Net</th></tr></thead><tbody>'+
-    low.slice(0,50).map(function(i){return '<tr><td style="font-weight:700">'+i.sku+'</td>'+
-      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+i.descr+'</td>'+
-      '<td style="text-align:right">'+N(i.qoh)+'</td><td style="text-align:right">'+N(i.po_qty)+'</td>'+
-      '<td style="text-align:right;font-weight:700;color:var(--red)">'+N(i.net)+'</td></tr>';}).join('')+
-    '</tbody></table></div>':'<div class="t3" style="padding:20px;text-align:center">Upload Planning_Data.xlsx in the Data Upload Hub to see inventory</div>')+
-    '</div>';
-
+  // Material Blockers from CC (subscribe to escalation events)
+  var cmpdBlockersEl = document.getElementById('pc-cmpd-blockers');
+  if(cmpdBlockersEl){
+    var events = [];
+    try { events = JSON.parse(localStorage.getItem('hoc_escalation_events')||'[]'); } catch(e){}
+    var relevant = events.filter(function(e){ return (e.targets||[]).indexOf('production_coordinator')>=0; }).slice(0,15);
+    cmpdBlockersEl.innerHTML = relevant.length ? relevant.map(function(e){
+      var when = e.ts ? new Date(e.ts).toLocaleString('en-US',{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}) : '—';
+      return '<div style="padding:8px 10px;border-bottom:1px solid var(--gray-l);font-size:11px"><span style="font-weight:700">'+e.batch+'</span> · <span style="color:var(--red);font-weight:700">'+e.blocker+'</span> · '+e.note+' <span class="t3" style="float:right">'+when+'</span></div>';
+    }).join('') : '<div class="t3" style="text-align:center;padding:14px;font-size:11px">No material blockers from Compound Coordinator</div>';
+  }
 }
 
 window.addEventListener('load', function(){

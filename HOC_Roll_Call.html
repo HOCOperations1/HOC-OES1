@@ -1164,6 +1164,12 @@ function __submitPIN() {
 // Run auth check immediately — DOM is ready since script is at end of body
 __checkAuth();
 
+// Publish employee roster to localStorage so other dashboards (Production Supervisor) can pull names
+try {
+  var roster = EMPLOYEES.map(function(e){ return {name: e.name, dept: e.dept, subdept: e.subdept, type: e.type, today: (e.daily||{})[(new Date()).toLocaleDateString('en-US',{weekday:'short'}).slice(0,3)] || ''}; });
+  localStorage.setItem('hoc_roll_call_roster', JSON.stringify({ ts: Date.now(), employees: roster }));
+} catch(e){}
+
 </script>
 
 <script>
