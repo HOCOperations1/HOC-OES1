@@ -597,9 +597,35 @@ async function installPWA() {
   deferredInstall = null;
 }
 
-// Service worker
+// Service worker — with auto-update detection
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(function(){});
+  navigator.serviceWorker.register('sw.js').then(function(reg){
+    // Check for updates every 60 seconds while page is open
+    setInterval(function(){ reg.update().catch(function(){}); }, 60000);
+
+    // When a new service worker is waiting, notify the user
+    reg.addEventListener('updatefound', function(){
+      var newWorker = reg.installing;
+      if(!newWorker) return;
+      newWorker.addEventListener('statechange', function(){
+        if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+          // New version is ready
+          if(confirm('A new version of HOC-OES is available. Reload now to update?')){
+            newWorker.postMessage('SKIP_WAITING');
+            window.location.reload();
+          }
+        }
+      });
+    });
+  }).catch(function(){});
+
+  // When the new SW takes over, force a reload so the user gets fresh code
+  var reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if(reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
 }
 
 // Watch for sync changes

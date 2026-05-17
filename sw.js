@@ -1,5 +1,6 @@
-// HOC-OES Service Worker — offline cache
-const CACHE = 'hoc-oes-v4.1';
+// HOC-OES Service Worker — network-first for HTML so updates land immediately
+// Bump CACHE version any time you redeploy and want browsers to pick up changes.
+const CACHE = 'hoc-oes-v5.1-20260517';
 const SHELL = [
   './index.html',
   './manifest.json',
@@ -25,7 +26,6 @@ const SHELL = [
   './HOC_5S_Connected.html',
 ];
 
-// Install: cache all shell files
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
@@ -37,29 +37,52 @@ self.addEventListener('install', e => {
   );
 });
 
-// Activate: clear old caches
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch: cache-first for shell, network-first for others
+// NETWORK-FIRST for HTML (updates land immediately), cache-first for other assets
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(response => {
+
+  const url = new URL(e.request.url);
+  const isHTML = url.pathname.endsWith('.html') ||
+                 url.pathname.endsWith('/') ||
+                 e.request.mode === 'navigate' ||
+                 (e.request.headers.get('accept') || '').includes('text/html');
+
+  if (isHTML) {
+    e.respondWith(
+      fetch(e.request).then(response => {
         if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE).then(c => c.put(e.request, clone));
         }
         return response;
-      }).catch(() => cached || new Response('Offline', { status: 503 }));
-    })
-  );
+      }).catch(() => caches.match(e.request).then(cached =>
+        cached || new Response('Offline — no cached copy', { status: 503 })
+      ))
+    );
+  } else {
+    e.respondWith(
+      caches.match(e.request).then(cached => {
+        if (cached) return cached;
+        return fetch(e.request).then(response => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE).then(c => c.put(e.request, clone));
+          }
+          return response;
+        }).catch(() => new Response('Offline', { status: 503 }));
+      })
+    );
+  }
+});
+
+self.addEventListener('message', e => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });
