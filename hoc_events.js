@@ -4,8 +4,8 @@
 (function(){
   if(window.HOC_EVENTS) return; // already loaded
 
-  var SUPA_URL = 'https://yemtpvrumqvbrzrpwnyy.supabase.co';
-  var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllbXRwdnJ1bXF2YnpyenB3bnl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MTQ0OTMsImV4cCI6MjA5NDA5MDQ5M30.HURBuAARZ-8ioMT60_XnkU_QeOtupPdvEnS0sFc9Ypo';
+  var SUPA_URL = 'https://yemtpvrumqvbzrzpwnyy.supabase.co';
+  var SUPA_KEY = 'sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl';
   var H = function(){ return {'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'}; };
   var QKEY = 'hoc_event_queue_v1';
   var SEEN_KEY = 'hoc_event_seen_v1';

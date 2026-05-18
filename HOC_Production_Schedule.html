@@ -73,8 +73,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
 <div id="main-ps" style="display:none"><div class="kpi-grid" id="ps-kpis"></div><div class="card"><div class="card-title">Production Schedule <span id="ps-count" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text3)"></span></div><div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"><input type="text" placeholder="Search batch, item, description..." onkeyup="setSearch(this.value)" style="flex:1;min-width:200px;padding:5px 10px"><select onchange="setStatus(this.value)" style="padding:5px 8px"><option value="ALL">All Status</option><option value="COMPLETED">Completed</option><option value="RUNNING">Running</option><option value="NOT STARTED">Not Started</option></select><select onchange="setLine(this.value)" style="padding:5px 8px"><option value="ALL">All Lines</option><option value="1">Line 1</option><option value="2">Line 2</option><option value="3">Line 3</option><option value="4">Line 4</option><option value="5">Line 5</option><option value="11">Line 11</option></select></div><div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Ln</th><th>Batch</th><th>Item</th><th>Description</th><th>Plan Cases</th><th>Actual Cases</th><th>Yield%</th><th>QC</th><th>Status</th></tr></thead><tbody id="ps-tbody"></tbody></table></div></div></div></div><script>
 
 var SYNC_KEY = 'hoc_sync_v1';
-var SUPA_URL = 'https://yemtpvrumqvbrzrpwnyy.supabase.co';
-var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllbXRwdnJ1bXF2YnpyenB3bnl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MTQ0OTMsImV4cCI6MjA5NDA5MDQ5M30.HURBuAARZ-8ioMT60_XnkU_QeOtupPdvEnS0sFc9Ypo';
+var SUPA_URL = 'https://yemtpvrumqvbzrzpwnyy.supabase.co';
+var SUPA_KEY = 'sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl';
 
 function syncRead(){try{return JSON.parse(localStorage.getItem(SYNC_KEY)||'{}');}catch(e){return{};}}
 function syncWrite(data){
@@ -148,7 +148,7 @@ function currentMonthPrefix(){
 // ── Pull schedule from Supabase if remote is newer than local ─────────
 // Lets a single Data Upload Hub upload propagate to every tablet.
 // Mirrors the poller in Compound Coordinator / Production Coordinator.
-var SUPA_KEY_PS = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllbXRwdnJ1bXF2YnpyenB3bnl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MTQ0OTMsImV4cCI6MjA5NDA5MDQ5M30.HURBuAARZ-8ioMT60_XnkU_QeOtupPdvEnS0sFc9Ypo';
+var SUPA_KEY_PS = 'sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl';
 function pullScheduleFromSupabase(cb){
   try{
     fetch(SUPA_URL+'/rest/v1/hoc_schedule?id=eq.1', {

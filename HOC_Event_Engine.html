@@ -202,7 +202,7 @@ td{padding:5px 8px;border-bottom:1px solid rgba(30,41,59,.5);vertical-align:top}
       <li>Open Power Automate (flow.microsoft.com) and sign in with your House of Cheatham account.</li>
       <li>Click <b>+ Create → Scheduled cloud flow</b>.</li>
       <li>Name: <b>HOC-OES Event Engine</b>. Run every <b>30 minutes</b> (or every hour — frequent enough to catch the 11 AM and 4 PM windows).</li>
-      <li>Add an HTTP action: <b>GET</b> <code>https://yemtpvrumqvbrzrpwnyy.supabase.co/rest/v1/hoc_events?sent_at=is.null</code> with headers <code>apikey</code> and <code>Authorization: Bearer ...</code> (use the anon key from the README).</li>
+      <li>Add an HTTP action: <b>GET</b> <code>https://yemtpvrumqvbzrzpwnyy.supabase.co/rest/v1/hoc_events?sent_at=is.null</code> with headers <code>apikey</code> and <code>Authorization: Bearer ...</code> (use the anon key from the README).</li>
       <li>Loop over the returned JSON array. For each event:
         <ul style="padding-left:20px">
           <li>Look up the matching config row from <code>hoc_event_config</code>.</li>
@@ -239,8 +239,8 @@ td{padding:5px 8px;border-bottom:1px solid rgba(30,41,59,.5);vertical-align:top}
 <script>
 'use strict';
 
-var SUPA_URL = 'https://yemtpvrumqvbrzrpwnyy.supabase.co';
-var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllbXRwdnJ1bXF2YnpyenB3bnl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MTQ0OTMsImV4cCI6MjA5NDA5MDQ5M30.HURBuAARZ-8ioMT60_XnkU_QeOtupPdvEnS0sFc9Ypo';
+var SUPA_URL = 'https://yemtpvrumqvbzrzpwnyy.supabase.co';
+var SUPA_KEY = 'sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl';
 var UPLOAD_KEY = 'hoc_upload_v1';
 var FLOOR_KEY  = 'hoc_floor_v1';
 

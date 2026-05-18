@@ -142,8 +142,8 @@ body{background:var(--bg);color:var(--text);font:13px/1.4 -apple-system,BlinkMac
 
 <script>
 // ── Supabase config (mirrors index.html) ─────────────────────────────
-const SUPA_URL = 'https://yemtpvrumqvbrzrpwnyy.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllbXRwdnJ1bXF2YnJ6cnB3bnl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTQ0MDcsImV4cCI6MjA3NjQ3MDQwN30.zd8GAyORrwIm5HK2_zudtmflBSWaCw0_t3a-2WnxXg8';
+const SUPA_URL = 'https://yemtpvrumqvbzrzpwnyy.supabase.co';
+const SUPA_KEY = 'sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl';
 function H(){ return {'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'}; }
 
 let results = []; // { section, label, status, detail, value }
@@ -626,6 +626,7 @@ function checkSync(){
 function checkDashboards(){
   var dashboards = [
     {file:'index.html', name:'Production Hub'},
+    {file:'HOC_Onboarding.html', name:'Onboarding Guide'},
     {file:'HOC_Data_Upload_Hub.html', name:'Data Upload Hub'},
     {file:'HOC_Leadership_Control_Tower.html', name:'Leadership Control Tower'},
     {file:'HOC_Production_Supervisor.html', name:'Production Supervisor'},
@@ -640,6 +641,7 @@ function checkDashboards(){
     {file:'HOC_Warehouse_Movement.html', name:'Warehouse Movement'},
     {file:'HOC_Schedule_Reforecast.html', name:'Schedule Reforecast'},
     {file:'HOC_Procurement_Dashboard.html', name:'Procurement Dashboard'},
+    {file:'HOC_Sales_Dashboard.html', name:'Sales & Customer View'},
     {file:'HOC_Demand_Planning_Hub.html', name:'Demand Planning Hub'},
     {file:'HOC_Event_Engine.html', name:'Event Engine'},
     {file:'HOC_Continuous_Improvement.html', name:'Continuous Improvement'},

@@ -191,6 +191,17 @@ if(localStorage.getItem('hoc_oes_version') !== HOC_OES_VERSION){
           <div style="font-size:12px;font-weight:700;color:#A78BFA;margin-bottom:4px">📊 LEADERSHIP</div>
           <div style="font-size:11px;color:var(--text2)">Start with <b>Control Tower</b> — KPIs, risks, pipeline flow, all in one</div>
         </a>
+        <a href="HOC_Sales_Dashboard.html" style="background:rgba(236,72,153,.1);border:1px solid rgba(236,72,153,.3);border-radius:8px;padding:12px;text-decoration:none;color:var(--text);transition:background .15s" onmouseover="this.style.background='rgba(236,72,153,.2)'" onmouseout="this.style.background='rgba(236,72,153,.1)'">
+          <div style="font-size:12px;font-weight:700;color:#F472B6;margin-bottom:4px">💼 SALES / ACCOUNT MGMT</div>
+          <div style="font-size:11px;color:var(--text2)">Start with <b>Sales Dashboard</b> — customer orders, fill rate, at-risk orders</div>
+        </a>
+      </div>
+
+      <div style="background:rgba(16,185,129,.06);border-left:3px solid #10B981;padding:10px 14px;border-radius:4px;margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:#10B981;margin-bottom:6px">📚 NEED THE FULL TRAINING?</div>
+        <div style="font-size:11.5px;color:var(--text2);line-height:1.6">
+          The <a href="HOC_Onboarding.html" style="color:#10B981;font-weight:700">Onboarding &amp; Operations Guide</a> has step-by-step walkthroughs for every role, a glossary, KPI definitions, troubleshooting, and a knowledge check quiz. ~15 min to go through.
+        </div>
       </div>
 
       <div style="background:rgba(59,130,246,.06);border-left:3px solid #3B82F6;padding:10px 14px;border-radius:4px;margin-bottom:14px">
@@ -254,8 +265,8 @@ if(localStorage.getItem('hoc_oes_version') !== HOC_OES_VERSION){
   <!-- KPI ROW -->
   <div class="kpi-row" id="kpi-row">
     <div class="kpi"><div class="kl">May Cases</div><div class="kv" id="kv-cases" style="color:var(--text)">—</div><div class="ks">Produced</div></div>
-    <div class="kpi"><div class="kl">Case Balance</div><div class="kv" id="kv-balance" style="color:var(--text)">—</div><div class="ks">vs 90% goal</div></div>
-    <div class="kpi"><div class="kl">Open Batches</div><div class="kv" id="kv-batches" style="color:var(--text)">—</div><div class="ks">Remaining</div></div>
+    <div class="kpi"><div class="kl">Case Balance</div><div class="kv" id="kv-balance" style="color:var(--text)">—</div><div class="ks">vs goal</div></div>
+    <div class="kpi"><div class="kl">Open Batches</div><div class="kv" id="kv-batches" style="color:var(--text)">—</div><div class="ks">Not started</div></div>
     <div class="kpi"><div class="kl">Synced Updates</div><div class="kv" id="kv-synced" style="color:var(--purple)">0</div><div class="ks">From floor tools</div></div>
     <div class="kpi"><div class="kl">Blocked Batches</div><div class="kv" id="kv-blocked" style="color:var(--text)">0</div><div class="ks">Upstream stopped</div></div>
     <div class="kpi"><div class="kl">OEE (May)</div><div class="kv" id="kv-oee" style="color:var(--text)">—</div><div class="ks">vs 60% goal</div></div>
@@ -295,6 +306,16 @@ if(localStorage.getItem('hoc_oes_version') !== HOC_OES_VERSION){
         <div class="tc-desc">Health check · upload status · Supabase · auto-detect engine · troubleshooting</div>
       </div>
       <span style="font-size:8px;font-weight:700;padding:2px 6px;border-radius:8px;background:#64748b22;color:#94a3b8;border:1px solid #64748b44">Health</span>
+      <div class="tc-arrow">›</div>
+    </a>
+
+  <a href="HOC_Onboarding.html" class="tool-card" style="border-color:#10B98122;text-decoration:none;border-width:2px;" onmouseover="this.style.borderColor='#10B98188'" onmouseout="this.style.borderColor='#10B98122'">
+      <div class="tc-logo" style="background:linear-gradient(135deg,#10B981,#14B8A6);color:#fff;font-size:16px">📚</div>
+      <div class="tc-body">
+        <div class="tc-name" style="color:#10B981">Onboarding &amp; Operations Guide</div>
+        <div class="tc-desc">Role guides · how-to walkthroughs · glossary · KPI definitions · knowledge check</div>
+      </div>
+      <span style="font-size:8px;font-weight:700;padding:2px 6px;border-radius:8px;background:#10B98122;color:#10B981;border:1px solid #10B98144">Training</span>
       <div class="tc-arrow">›</div>
     </a>
 
@@ -407,6 +428,15 @@ if(localStorage.getItem('hoc_oes_version') !== HOC_OES_VERSION){
       
       <div class="tc-arrow">›</div>
     </a>
+<a href="HOC_Sales_Dashboard.html" class="tool-card" style="border-color:#EC489922;text-decoration:none;" onmouseover="this.style.borderColor='#EC489966'" onmouseout="this.style.borderColor='#EC489922'">
+      <div class="tc-logo" style="background:#EC489922;color:#EC4899;border:1px solid #EC489944">SL</div>
+      <div class="tc-body">
+        <div class="tc-name" style="color:#EC4899">Sales &amp; Customer View</div>
+        <div class="tc-desc">Customer orders · fill rate · at-risk · ship pipeline</div>
+      </div>
+      
+      <div class="tc-arrow">›</div>
+    </a>
 <a href="HOC_Event_Engine.html" class="tool-card" style="border-color:#EF444422;text-decoration:none;" onmouseover="this.style.borderColor='#EF444466'" onmouseout="this.style.borderColor='#EF444422'">
       <div class="tc-logo" style="background:#EF444422;color:#EF4444;border:1px solid #EF444444">EE</div>
       <div class="tc-body">
@@ -500,8 +530,8 @@ if(localStorage.getItem('hoc_oes_version') !== HOC_OES_VERSION){
 <script>
 const SYNC_KEY = 'hoc_sync_v1';
 const UPLOAD_KEY = 'hoc_upload_v1';
-const SUPA_URL = 'https://yemtpvrumqvbrzrpwnyy.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllbXRwdnJ1bXF2YnpyenB3bnl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MTQ0OTMsImV4cCI6MjA5NDA5MDQ5M30.HURBuAARZ-8ioMT60_XnkU_QeOtupPdvEnS0sFc9Ypo';
+const SUPA_URL = 'https://yemtpvrumqvbzrzpwnyy.supabase.co';
+const SUPA_KEY = 'sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl';
 
 function H(){ return {'apikey':SUPA_KEY, 'Authorization':'Bearer '+SUPA_KEY}; }
 function syncRead() { try { return JSON.parse(localStorage.getItem(SYNC_KEY)||'{}'); } catch(e) { return {}; } }
@@ -634,8 +664,14 @@ function loadKPIs() {
       });
     });
 
-    // Open batches = anything not COMPLETED
-    var open = merged.filter(function(b){ return b.status !== 'COMPLETED'; }).length;
+    // Open batches = NOT STARTED only (aligned with PS).
+    // Previously this counted everything !== COMPLETED, which included RUNNING — causing
+    // Index and PS to show different numbers for the same KPI. NOT STARTED is the truer
+    // "open" definition: batches that haven't been touched yet.
+    var open = merged.filter(function(b){
+      var s = String(b.status || '').toUpperCase();
+      return s === 'NOT STARTED' || s === '';
+    }).length;
     document.getElementById('kv-batches').textContent = open;
 
     // Blocked = qc_status HOLD or REJECTED
@@ -643,48 +679,66 @@ function loadKPIs() {
     document.getElementById('kv-blocked').textContent = blocked;
     document.getElementById('kv-blocked').style.color = blocked > 0 ? 'var(--red)' : 'var(--green)';
 
-    // Cases: prefer parser's keys (may_actual / may_goal / may_bal), then fall back to other formats,
-    // and finally compute from completed batches' actqty if goals are missing entirely.
-    var cases = goals.may_actual;
-    if(cases == null) cases = goals['Overall May Cases'];
-    if(cases == null) cases = goals['May Cases'];
-    if(cases == null) cases = goals.cases_actual;
-    if(cases == null){
-      cases = merged.filter(function(b){ return b.status === 'COMPLETED'; })
-                    .reduce(function(sum,b){ return sum + (b.actqty || 0); }, 0);
+    // Cases: PREFER Goal Source Data (row 20) — the planner's official monthly rollup.
+    // SANITY CHECK: reject tiny values (<1000) that suggest wrong file uploaded.
+    // Aligned with HOC_Production_Supervisor.html logic for consistency.
+    var cases = null;
+    var goalCases = null;
+    var caseSource = 'computed from batches';
+
+    var rawActual = goals.may_actual != null ? goals.may_actual
+                  : goals['Overall May Cases'] != null ? goals['Overall May Cases']
+                  : goals['May Cases'] != null ? goals['May Cases']
+                  : goals.cases_actual;
+    var rawGoal   = goals.may_goal != null ? goals.may_goal
+                  : goals['Case Goal'] != null ? goals['Case Goal']
+                  : goals['Overall May Cases Goal'] != null ? goals['Overall May Cases Goal']
+                  : goals.cases_goal;
+
+    // Use Goal Source Data only if values are sane (≥1000)
+    if((Number(rawActual) >= 1000) || (Number(rawGoal) >= 1000)){
+      cases = Number(rawActual) || 0;
+      goalCases = Number(rawGoal) || 0;
+      caseSource = 'Goal Source Data';
+    } else {
+      // Fallback — sum from completed batches (deduped by batch number)
+      var seenBatches = {};
+      var sumCompleted = 0, sumPlanned = 0;
+      merged.forEach(function(b){
+        if(!b.batch || seenBatches[b.batch]) return;
+        seenBatches[b.batch] = 1;
+        sumPlanned += (Number(b.origqty) || 0);
+        if(b.status === 'COMPLETED') sumCompleted += (Number(b.actqty) || 0);
+      });
+      cases = sumCompleted;
+      goalCases = sumPlanned;
     }
     document.getElementById('kv-cases').textContent = N(cases);
 
-    // Balance: prefer may_bal direct from parser, otherwise compute
-    var balance = goals.may_bal;
-    if(balance == null){
-      var goalCases = goals.may_goal || goals['Case Goal'] || goals['Overall May Cases Goal'] || goals.cases_goal;
-      if(goalCases && cases != null){
-        balance = (goalCases * 0.9) - cases;
-      }
-    }
-    if(balance != null){
-      document.getElementById('kv-balance').textContent = N(Math.round(balance));
-      document.getElementById('kv-balance').style.color = balance <= 0 ? 'var(--green)' : 'var(--red)';
+    // Balance: actual − goal (aligned with PS — no more "× 0.9" stretch math).
+    // Positive = ahead of plan (green). Negative = behind plan (red).
+    if(goalCases > 0){
+      var balance = cases - goalCases;
+      document.getElementById('kv-balance').textContent = (balance >= 0 ? '+' : '') + N(Math.round(balance));
+      document.getElementById('kv-balance').style.color = balance >= 0 ? 'var(--green)' : 'var(--red)';
     }
   }
 
-  // OEE: prefer parser's data, otherwise fall back to goals_cache (Power BI Demand Hub export)
-  if(_UPLOAD && _UPLOAD.goals && (_UPLOAD.goals.oee_actual != null)){
-    document.getElementById('kv-oee').textContent = pct(_UPLOAD.goals.oee_actual / 100);
-    document.getElementById('kv-oee').style.color = _UPLOAD.goals.oee_actual >= 60 ? 'var(--green)' : 'var(--red)';
-  } else {
-    try {
-      var goals_cache = JSON.parse(localStorage.getItem('hoc_goals_cache')||'null');
-      if (goals_cache) {
-        var oee_m = (goals_cache.oee||[]).filter(function(m){return m.actual>0&&!m.month.includes('Avg');});
-        var latest = oee_m.length ? oee_m[oee_m.length-1] : null;
-        if (latest) {
-          document.getElementById('kv-oee').textContent = pct(latest.actual);
-          document.getElementById('kv-oee').style.color = latest.actual >= 0.6 ? 'var(--green)' : 'var(--red)';
-        }
-      }
-    } catch(e) {}
+  // OEE: read from Goal Source Data rows 4-9 (per-line OEE from Patch).
+  // Aligned with PS — shows honest "—" when no Patch data, not a stale value from
+  // localStorage.hoc_goals_cache that could be days old.
+  var oeeEl = document.getElementById('kv-oee');
+  if(oeeEl){
+    var oeeMap = (_UPLOAD && _UPLOAD.goals && _UPLOAD.goals.oee_by_line) || {};
+    var oeeValues = Object.values(oeeMap).filter(function(v){ return v > 0; });
+    if(oeeValues.length){
+      var oeeAvg = Math.round(oeeValues.reduce(function(a,b){ return a+b; }, 0) / oeeValues.length);
+      oeeEl.textContent = oeeAvg + '%';
+      oeeEl.style.color = oeeAvg >= 60 ? 'var(--green)' : 'var(--red)';
+    } else {
+      oeeEl.textContent = '—';
+      oeeEl.style.color = 'var(--text3)';
+    }
   }
 
   // Render sync entries from floor data + local sync bus
@@ -1120,8 +1174,8 @@ function closeQuickStart(){
 <script>
 // ── Supabase cross-device sync addon ─────────────────────────────────
 (function() {
-  var SB_URL  = 'https://yemtpvrumqvbrzrpwnyy.supabase.co';
-  var SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllbXRwdnJ1bXF2YnpyenB3bnl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MTQ0OTMsImV4cCI6MjA5NDA5MDQ5M30.HURBuAARZ-8ioMT60_XnkU_QeOtupPdvEnS0sFc9Ypo';
+  var SB_URL  = 'https://yemtpvrumqvbzrzpwnyy.supabase.co';
+  var SB_ANON = 'sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl';
   
   function sbPost(table, body) {
     if (typeof fetch === 'undefined') return;
