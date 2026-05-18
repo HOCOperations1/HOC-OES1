@@ -187,6 +187,17 @@ select:focus,input:focus,textarea:focus{border-color:var(--blue)}
           <option value="SHORT — EMERGENCY ORDER">🚨 SHORTAGE — Emergency procurement needed</option>
         </select>
       </div>
+
+      <!-- BATCH-SPECIFIC RAW MATERIALS (BOM verification) -->
+      <div style="background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.25);border-radius:8px;padding:10px;margin-bottom:8px">
+        <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#60A5FA;margin-bottom:8px">
+          Required Raw Materials for This Batch
+          <span id="bom-source" style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span>
+        </div>
+        <div id="bom-list" style="font-size:11px;color:var(--text2);line-height:1.6">
+          <div style="font-style:italic;color:var(--text3)">Loading batch-specific raw materials…</div>
+        </div>
+      </div>
       
       <!-- Multi-shortage entry -->
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
@@ -839,6 +850,62 @@ function openVD(id){
   document.getElementById('v-notes').value=u.notes||'';
   document.getElementById('alert-log').textContent=u.alerts_sent?'Alerts sent: '+u.alerts_sent.join(', '):'';
   document.getElementById('vd-saved').classList.remove('show');
+
+  // Populate batch-specific raw materials (BOM) section.
+  // We look in 3 places, in order of preference:
+  //   1. _UPLOAD.boms[formula_id]  — if a BOM upload exists per formula
+  //   2. _UPLOAD.bom_lookup[batch] — if per-batch BOM available
+  //   3. Fall back to derived signals: shortage value + formula number + a
+  //      placeholder list pulled from CHEMICALS inventory if formula data exists
+  (function populateBOM(){
+    var bomList = document.getElementById('bom-list');
+    var bomSrc = document.getElementById('bom-source');
+    if(!bomList) return;
+    var up = (typeof _UPLOAD !== 'undefined') ? _UPLOAD : null;
+    var rows = null;
+    if(up && up.bom_lookup && up.bom_lookup[b.batch]) {
+      rows = up.bom_lookup[b.batch];
+      bomSrc.textContent = '· from BOM upload (batch-specific)';
+    } else if(up && up.boms && up.boms[b.formula]) {
+      rows = up.boms[b.formula];
+      bomSrc.textContent = '· from BOM upload (formula F.' + b.formula + ')';
+    }
+    if(rows && rows.length){
+      bomList.innerHTML = '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
+        '<thead><tr><th style="text-align:left;padding:4px;color:var(--text3);font-size:9px;font-weight:700;letter-spacing:.05em;border-bottom:1px solid var(--border)">SKU</th>' +
+        '<th style="text-align:left;padding:4px;color:var(--text3);font-size:9px;font-weight:700;letter-spacing:.05em;border-bottom:1px solid var(--border)">Description</th>' +
+        '<th style="text-align:right;padding:4px;color:var(--text3);font-size:9px;font-weight:700;letter-spacing:.05em;border-bottom:1px solid var(--border)">Need (lbs)</th>' +
+        '<th style="text-align:right;padding:4px;color:var(--text3);font-size:9px;font-weight:700;letter-spacing:.05em;border-bottom:1px solid var(--border)">On Hand</th>' +
+        '<th style="text-align:center;padding:4px;color:var(--text3);font-size:9px;font-weight:700;letter-spacing:.05em;border-bottom:1px solid var(--border)">OK?</th></tr></thead><tbody>' +
+        rows.map(function(r){
+          var need = parseFloat(r.qty_need || r.lbs_need || r.need || 0) || 0;
+          var have = parseFloat(r.qty_have || r.qoh || r.have || 0) || 0;
+          var ok = have >= need;
+          return '<tr><td style="padding:4px;font-family:ui-monospace,monospace;color:var(--text)">' + (r.sku||r.item||'—') + '</td>' +
+            '<td style="padding:4px;color:var(--text2)">' + (r.desc||r.description||'—') + '</td>' +
+            '<td style="padding:4px;text-align:right;color:var(--text)">' + need.toLocaleString(undefined,{maximumFractionDigits:1}) + '</td>' +
+            '<td style="padding:4px;text-align:right;color:' + (ok?'var(--text)':'var(--red)') + '">' + have.toLocaleString(undefined,{maximumFractionDigits:1}) + '</td>' +
+            '<td style="padding:4px;text-align:center;color:' + (ok?'var(--green)':'var(--red)') + '">' + (ok?'✓':'⚠') + '</td></tr>';
+        }).join('') +
+        '</tbody></table>';
+    } else {
+      // No BOM data available — explain the gap and what the operator should do
+      bomSrc.textContent = '· BOM not yet integrated';
+      bomList.innerHTML = '<div style="padding:6px 0">' +
+        '<div style="color:var(--text)">Formula <b>F.' + b.formula + '</b> · ' + N(b.lbs) + ' lbs total compound</div>' +
+        '<div style="color:var(--text3);margin-top:4px;font-size:10px">Per-batch BOM data is not yet uploaded. ' +
+          'To verify raw materials for this batch:</div>' +
+        '<ol style="color:var(--text3);margin:6px 0 0 16px;font-size:10px;line-height:1.7">' +
+          '<li>Pull formula sheet for F.' + b.formula + ' from Vicinity</li>' +
+          '<li>Walk staging area + chemical pull area</li>' +
+          '<li>Confirm each raw is on hand and at correct quantity</li>' +
+          '<li>If anything is short, log it below in "Raw Material Shortages"</li>' +
+        '</ol>' +
+        ((b.shortage && b.shortage < 0) ? '<div style="margin-top:6px;padding:5px 8px;background:rgba(239,68,68,.08);border-radius:4px;color:var(--red);font-size:10px">⚠ System flagged shortage: ' + N(b.shortage) + ' lbs</div>' : '') +
+        '</div>';
+    }
+  })();
+
   document.getElementById('ver-detail').classList.add('open');
   document.getElementById('ver-detail').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
@@ -877,6 +944,7 @@ function saveVerification(){
   if(!activeVer)return;
   const st=document.getElementById('v-status').value;
   const isBlocked=st.includes('HOLD')||st.includes('EMERGENCY');
+  const isVerified=st.includes('VERIFIED')||st.includes('PROCEED');
   syncSet(activeVer.batch,'cc',{
     status:st,
     shortages:currentShortages,
@@ -887,6 +955,18 @@ function saveVerification(){
     notes:document.getElementById('v-notes').value,
     blocked:isBlocked,ts:new Date().toISOString()
   });
+  // When a batch is VERIFIED — PROCEED, also flag it as ready for pre-weigh.
+  // PreWeigh Scheduler reads `pw.pw_status === 'QUEUED'` and surfaces these
+  // as priority items at the top of its queue. This is the "auto-push to
+  // pre-weigh" behavior that closes the compound → pre-weigh flow handoff.
+  if(isVerified && !isBlocked && !currentShortages.length){
+    syncSet(activeVer.batch,'pw',{
+      pw_status:'QUEUED',
+      queued_by:'compound_coordinator',
+      queued_from:'verification',
+      ts:new Date().toISOString()
+    });
+  }
   // Fire event for any shortage or block
   try {
     if(isBlocked || currentShortages.length){

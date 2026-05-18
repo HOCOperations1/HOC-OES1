@@ -173,6 +173,7 @@ strong{color:var(--text);font-weight:600}
     <div class="nav-item" data-target="role-qc"><span class="ic">🔬</span><span class="lab">QC Team</span></div>
     <div class="nav-item" data-target="role-fg"><span class="ic">📦</span><span class="lab">FG / Warehouse</span></div>
     <div class="nav-item" data-target="role-leadership"><span class="ic">📊</span><span class="lab">Leadership</span></div>
+    <div class="nav-item" data-target="role-tank"><span class="ic">🏭</span><span class="lab">Compound Manager</span></div>
     <div class="nav-item" data-target="role-sales"><span class="ic">💼</span><span class="lab">Sales / Account Mgmt</span></div>
 
     <div class="nav-title">How-To Guides</div>
@@ -231,6 +232,11 @@ strong{color:var(--text);font-weight:600}
       <div class="rl">📊 LEADERSHIP</div>
       <div class="rt">Plant Leadership</div>
       <div class="rd">Control Tower · KPI rollup · risk monitoring · trends</div>
+    </div>
+    <div class="role-card pink" onclick="go('role-tank')">
+      <div class="rl">🏭 COMPOUND MANAGER</div>
+      <div class="rt">Tank Assignment</div>
+      <div class="rd">Tank Board · batch-to-tank · CIP status · capacity</div>
     </div>
     <div class="role-card pink" onclick="go('role-sales')">
       <div class="rl">💼 SALES</div>
@@ -710,6 +716,131 @@ strong{color:var(--text);font-weight:600}
     <strong>Don't expect daily perfect data</strong>
     The Control Tower is only as accurate as the upstream uploads and floor inputs. If the planner forgot to upload today, you'll see stale numbers. If compound forgot to mark a batch complete, the pipeline will show a phantom batch. Trust the system, but verify on the floor.
   </div>
+</div>
+
+<!-- ════════════════════ ROLE: COMPOUND MANAGER (Tank Board) ════════════════════ -->
+<div id="sec-role-tank" class="section">
+  <div class="h1">🏭 Compound Manager Guide</div>
+  <div class="h1-sub">Your job is matching batches to tanks based on capacity, capability, and category. Your primary dashboard is <a href="HOC_Tank_Board.html">Compound Tank Board</a> — it tracks all 14 mixing tanks and lets you assign verified batches.</div>
+
+  <div class="callout">
+    <strong>This role is distinct from Compound Coordinator and Compound Scheduler</strong>
+    Coordinator handles raw material verification. Scheduler handles formula sequencing. <strong>You handle which tank each batch goes into.</strong> Three roles, three different decisions, three different dashboards.
+  </div>
+
+  <div class="h2">First-time setup (do this once)</div>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Open Tank Config tab</div>
+      <div class="step-desc">From the top nav of Tank Board, click "Tank Config". You'll see all 14 tanks pre-loaded from the master spreadsheet with their physical specs (capacity, heated, double-motion sweep, homogenizer).</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Set each tank's category</div>
+      <div class="step-desc">Categories: <strong>All-Purpose</strong>, <strong>Base</strong>, <strong>Cold Thinner</strong>, <strong>Oil &amp; Thin</strong>, <strong>Gel</strong>, <strong>Other</strong>. Use the dropdown next to each tank. Per the master sheet, MT-18 is the typical Gel tank (homogenizer). MT-1 and MT-2 are usually All-Purpose (no heat). The rest depends on your operations.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Add notes (optional)</div>
+      <div class="step-desc">Notes field is for things like "requires special seal", "outside vendor cleaning required between gel batches", etc. Visible only on the Config tab — not on the main Tank Board.</div>
+    </div>
+  </div>
+
+  <div class="h2">Daily routine</div>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Open Tank Board</div>
+      <div class="step-desc">From HOC-OES hub, click the teal "TB" card. Or direct URL: <code>HOC_Tank_Board.html</code>.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Scan the KPI strip</div>
+      <div class="step-desc">7 tiles at top: <strong>Total Tanks</strong>, <strong>Available</strong>, <strong>In Use</strong>, <strong>Cleaning</strong>, <strong>Offline</strong>, <strong>Pending Assign</strong>, <strong>Total Capacity</strong>. "Pending Assign" is the one to watch — if it's not zero, batches are waiting for you.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Click "Assign Batches" tab</div>
+      <div class="step-desc">Shows the list of batches awaiting a tank. Each row has Compound Coordinator verification status (Verified ✓ or Pending). Click "Assign tank →" to open the picker.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <div class="step-title">Pick a compatible tank</div>
+      <div class="step-desc">The picker shows ONLY tanks that are (a) currently Available status, and (b) large enough for the batch (approx 1 gal ≈ 8 lbs). Sorted smallest-fit-first. Each tank shows capacity + category + capabilities. Click "Assign →" to confirm.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">5</div>
+    <div class="step-body">
+      <div class="step-title">Update tank status as work happens</div>
+      <div class="step-desc">Click any tank on the Tank Board to update: <strong>Filling</strong> (compound mixing now), <strong>Full</strong> (mixed, awaiting fill), <strong>Draining</strong> (being emptied to fill line), <strong>Cleaning</strong> (CIP in progress), <strong>Available</strong> (ready for next batch).</div>
+    </div>
+  </div>
+
+  <div class="h2">Tank capability rules</div>
+  <p>Capacity check is built in (won't let you assign a 3000-gal batch to MT-9). But other rules you should know:</p>
+  <table class="tbl">
+    <tr><th>Capability</th><th>Which tanks</th><th>Required for</th></tr>
+    <tr><td>Heated</td><td>MT-3 through MT-13, MT-18 (all except MT-1, MT-2)</td><td>Most compounds that need temperature</td></tr>
+    <tr><td>Double-motion sweep</td><td>MT-5 through MT-8, MT-10 through MT-13, MT-18</td><td>Thick / viscous compounds</td></tr>
+    <tr><td>Homogenizer (built-in)</td><td>MT-18 only</td><td>Gel batches (others need external homogenizer)</td></tr>
+  </table>
+
+  <div class="h2">Tank status colors</div>
+  <p>The colored bar on the left of each tank card tells you status at a glance:</p>
+  <ul style="margin:8px 0 12px 20px;color:var(--text2);font-size:12.5px;line-height:1.7">
+    <li><strong style="color:#34D399">Green</strong> = Available (ready for next batch)</li>
+    <li><strong style="color:#60A5FA">Blue</strong> = Filling (compound mixing now)</li>
+    <li><strong style="color:#A78BFA">Purple</strong> = Full (mixed, waiting to be drained)</li>
+    <li><strong style="color:#FBBF24">Amber</strong> = Draining (transferring to fill line)</li>
+    <li><strong style="color:#FDBA74">Orange</strong> = Cleaning (CIP in progress)</li>
+    <li><strong style="color:#9CA3AF">Gray</strong> = Offline (out of service)</li>
+  </ul>
+
+  <div class="h2">Dwell time alerts</div>
+  <p>When a tank is in Full or Draining status, the card shows "<em>In tank: 2d 4h</em>" — how long the batch has been sitting. Color-coded:</p>
+  <table class="tbl">
+    <tr><th>Color</th><th>Dwell time</th><th>Action</th></tr>
+    <tr><td>White/normal</td><td>&lt; 24 hr</td><td>OK</td></tr>
+    <tr><td>Amber</td><td>1-3 days</td><td>Check soon — material aging</td></tr>
+    <tr><td>Red</td><td>&gt; 3 days</td><td>Investigate — may need re-test or re-work</td></tr>
+  </table>
+
+  <div class="h2">Recent Activity tab</div>
+  <p>The Activity tab logs every status change and assignment for the last 50 actions. Useful for end-of-shift review or troubleshooting "what happened to this batch yesterday".</p>
+
+  <div class="callout warn">
+    <strong>Tank assignments sync to other dashboards</strong>
+    When you assign a batch to a tank, that info flows to Compound Coordinator (verification screen) and Compound Scheduler so the rest of the team knows where each batch lives. Don't bypass the dashboard — manual sticky notes break the sync.
+  </div>
+
+  <div class="h2">What you can't do (yet)</div>
+  <table class="tbl">
+    <tr><th>Need</th><th>Where to get it</th></tr>
+    <tr><td>Tank cleaning history (CIP records)</td><td>Not yet in HOC OES — track in your CIP logbook for now</td></tr>
+    <tr><td>Auto-suggest best tank for a batch</td><td>Future feature — current version is manual picker only</td></tr>
+    <tr><td>Real-time tank temperature / pressure</td><td>Read from physical tank gauges — HOC OES doesn't have IOT yet</td></tr>
+    <tr><td>Cross-shift handoff notes</td><td>Use the per-tank "Notes" field in the update modal</td></tr>
+  </table>
 </div>
 
 <!-- ════════════════════ ROLE: SALES ════════════════════ -->

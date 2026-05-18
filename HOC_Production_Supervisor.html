@@ -953,10 +953,40 @@ function renderAlert(){
 
 function renderKPIs(){
   // ── Month filter: keep all the KPIs internally consistent ────────────
-  var monthPrefix = (new Date()).toISOString().slice(0,7); // "2026-05"
-  var mayBatches = BATCHES.filter(function(b){
-    return b.date && String(b.date).indexOf(monthPrefix) === 0;
-  });
+  // Tolerates: ISO strings ("2026-05-15"), US format ("5/15/2026"),
+  // Excel serial numbers (46141.7916), and Date objects. Any batch whose
+  // date doesn't parse to the current month is excluded from the rollup.
+  var nowD = new Date();
+  var monthPrefix = nowD.toISOString().slice(0,7); // "2026-05"
+  var thisYear = nowD.getUTCFullYear();
+  var thisMonth = nowD.getUTCMonth(); // 0-indexed
+  function _batchIsThisMonth(b){
+    var v = b.date;
+    if(v == null || v === '') return false;
+    // Excel serial number → Date
+    if(typeof v === 'number'){
+      var d = new Date(Math.round((v - 25569) * 86400 * 1000));
+      return d.getUTCFullYear() === thisYear && d.getUTCMonth() === thisMonth;
+    }
+    var s = String(v).trim();
+    if(!s) return false;
+    // ISO string YYYY-MM-DD or YYYY-MM-DDTHH:MM
+    if(s.indexOf(monthPrefix) === 0) return true;
+    // Excel serial as string
+    if(/^\d{4,6}(\.\d+)?$/.test(s)){
+      var d2 = new Date(Math.round((Number(s) - 25569) * 86400 * 1000));
+      return d2.getUTCFullYear() === thisYear && d2.getUTCMonth() === thisMonth;
+    }
+    // US format M/D/YYYY or MM/DD/YYYY
+    var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if(m){
+      var mo = parseInt(m[1],10) - 1; // 0-indexed
+      var yr = parseInt(m[3],10);
+      return yr === thisYear && mo === thisMonth;
+    }
+    return false;
+  }
+  var mayBatches = BATCHES.filter(_batchIsThisMonth);
 
   const done=mayBatches.filter(b=>getStatus(b)==='COMPLETED').length;
   const run =mayBatches.filter(b=>getStatus(b)==='RUNNING').length;

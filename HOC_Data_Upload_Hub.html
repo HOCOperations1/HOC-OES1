@@ -915,42 +915,57 @@ function updateAllDashboards() {
           var grows = XLSX.utils.sheet_to_json(goalSheet, {header:1, defval:''});
           var goals = {may_actual:0, may_goal:0, may_bal:0, oee_act:0, oee_goal:60, att_act:0, att_goal:90, oee_by_line:{}, att_by_line:{}};
           var in_monthly = false;
-          grows.forEach(function(row) {
-            if(!row[0]) return;
-            var label = String(row[0]).trim();
-            // Section header that flips us into the "monthly case goals" table.
-            // Be specific: must contain both MONTHLY and CASE GOAL so we don't
-            // get false positives from row 2's "monthly OEE %" instructions.
-            if(label.indexOf('MONTHLY')>=0 && label.toUpperCase().indexOf('CASE')>=0) {
-              in_monthly=true;
+          var matchedMayRow = -1;  // track for diagnostic logging
+          grows.forEach(function(row, ri) {
+            if(!row || !row.length) return;
+            // Build a combined-cells string for tolerant section-header detection.
+            // Merged Excel cells sometimes put text in unexpected columns.
+            var allCells = row.slice(0, 4).map(function(c){ return String(c||''); }).join(' ').toUpperCase();
+            // Section header detection — must mention both MONTHLY and CASE
+            if(allCells.indexOf('MONTHLY') >= 0 && allCells.indexOf('CASE') >= 0 && allCells.indexOf('GOAL') >= 0) {
+              in_monthly = true;
               return;
             }
-            if(in_monthly && label==='May') {
+            if(!row[0]) return;
+            var label = String(row[0]).trim();
+            // Tolerant May matching: "May", "May 2026", "May-26", "May ", etc.
+            // Lowercase + startsWith handles all real-world Excel variants.
+            var labelLower = label.toLowerCase();
+            if(in_monthly && (labelLower === 'may' || labelLower.indexOf('may ') === 0 || labelLower.indexOf('may-') === 0 || labelLower.indexOf('may2') === 0)) {
               var ma = parseInt(parseFloat(row[1]||0))||0;
               var mg = parseInt(parseFloat(row[2]||0))||0;
               var mb = parseInt(parseFloat(row[3]||0))||0;
-              // Sanity check: HOC monthly cases will always be in the
-              // tens of thousands. If we see tiny numbers (<1000), the
-              // user uploaded the wrong file (e.g. Planning Data instead
-              // of Production Tracker). Don't overwrite goals with junk.
+              // Sanity check: HOC monthly cases will always be in the tens of thousands.
               if(ma >= 1000 || mg >= 1000) {
                 goals.may_actual = ma;
                 goals.may_goal   = mg;
                 goals.may_bal    = mb;
+                matchedMayRow = ri + 1;
               } else {
-                progress('⚠ Goal Source Data row "May" has tiny values (actual=' + ma + ', goal=' + mg + '). Skipping — likely wrong file uploaded.', 'warn');
+                progress('⚠ Goal Source Data row "' + label + '" (#'+(ri+1)+') has tiny values (actual=' + ma + ', goal=' + mg + '). Skipping — likely wrong file uploaded.', 'warn');
               }
             }
-            // OEE by line
+            // OEE by line — only when in monthly section, so line numbers don't
+            // get parsed from other places
             var lineNum = parseInt(label);
             if(!isNaN(lineNum) && lineNum>0 && lineNum<15) {
               if(row[1]) goals.oee_by_line[lineNum] = Math.round(parseFloat(row[1]||0)*1000)/10;
               if(row[4]) goals.att_by_line[lineNum] = Math.round(parseFloat(row[4]||0)*1000)/10;
             }
           });
-          result.goals = goals;
-          result.goals_ts = ts;
-          progress('✓ Goals: actual=' + goals.may_actual.toLocaleString() + ' goal=' + goals.may_goal.toLocaleString(), 'ok');
+          // Only overwrite result.goals if parsing succeeded — otherwise preserve
+          // whatever Path A (monthly_master_rollup) may have already written.
+          if(goals.may_actual > 0 || goals.may_goal > 0 || Object.keys(goals.oee_by_line).length > 0){
+            result.goals = goals;
+            result.goals_ts = ts;
+            if(matchedMayRow > 0){
+              progress('✓ Goals: actual=' + goals.may_actual.toLocaleString() + ' goal=' + goals.may_goal.toLocaleString() + ' (from row ' + matchedMayRow + ')', 'ok');
+            } else {
+              progress('⚠ Goal Source Data: section found but no May row matched. Check Excel for label format.', 'warn');
+            }
+          } else {
+            progress('⚠ Goal Source Data: parsed but no May rollup found. Section header detection may have failed.', 'warn');
+          }
         }
 
         // 3. Production Goals Dashboard → OEE/Attainment

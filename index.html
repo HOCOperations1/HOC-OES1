@@ -350,6 +350,15 @@ if(localStorage.getItem('hoc_oes_version') !== HOC_OES_VERSION){
       <span style="font-size:8px;font-weight:700;padding:2px 6px;border-radius:8px;background:#3B82F622;color:#3B82F6;border:1px solid #3B82F644">Step 3</span>
       <div class="tc-arrow">›</div>
     </a>
+<a href="HOC_Tank_Board.html" class="tool-card" style="border-color:#14B8A622;text-decoration:none;" onmouseover="this.style.borderColor='#14B8A666'" onmouseout="this.style.borderColor='#14B8A622'">
+      <div class="tc-logo" style="background:#14B8A622;color:#14B8A6;border:1px solid #14B8A644">TB</div>
+      <div class="tc-body">
+        <div class="tc-name" style="color:#14B8A6">Compound Tank Board</div>
+        <div class="tc-desc">14 tanks · status · batch-to-tank assignment</div>
+      </div>
+      
+      <div class="tc-arrow">›</div>
+    </a>
 <a href="HOC_Quality_Lab.html" class="tool-card" style="border-color:#10B98122;text-decoration:none;" onmouseover="this.style.borderColor='#10B98166'" onmouseout="this.style.borderColor='#10B98122'">
       <div class="tc-logo" style="background:#10B98122;color:#10B981;border:1px solid #10B98144">QC</div>
       <div class="tc-body">
@@ -651,10 +660,34 @@ function loadKPIs() {
   }
 
   if(batches.length){
-    // Filter to current month
+    // Filter to current month — tolerant of ISO, US, Excel serial, and Date.
+    // Same logic as Production Supervisor for KPI consistency.
     var now = new Date();
     var prefix = now.toISOString().slice(0,7); // YYYY-MM
-    var monthBatches = batches.filter(function(b){ return b.date && b.date.startsWith(prefix); });
+    var thisYear = now.getUTCFullYear();
+    var thisMonth = now.getUTCMonth();
+    function _isThisMonth(v){
+      if(v == null || v === '') return false;
+      if(typeof v === 'number'){
+        var d = new Date(Math.round((v - 25569) * 86400 * 1000));
+        return d.getUTCFullYear() === thisYear && d.getUTCMonth() === thisMonth;
+      }
+      var s = String(v).trim();
+      if(!s) return false;
+      if(s.indexOf(prefix) === 0) return true;
+      if(/^\d{4,6}(\.\d+)?$/.test(s)){
+        var d2 = new Date(Math.round((Number(s) - 25569) * 86400 * 1000));
+        return d2.getUTCFullYear() === thisYear && d2.getUTCMonth() === thisMonth;
+      }
+      var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if(m){
+        var mo = parseInt(m[1],10) - 1;
+        var yr = parseInt(m[3],10);
+        return yr === thisYear && mo === thisMonth;
+      }
+      return false;
+    }
+    var monthBatches = batches.filter(function(b){ return _isThisMonth(b.date); });
 
     // Merge floor data so we know real status + qc_status
     var merged = monthBatches.map(function(b){

@@ -297,12 +297,16 @@ function checkData(){
         row('data','Upload Freshness', staleStatus, staleDetail, ageLabel);
       }
 
-      // Goals
+      // Goals — show actual values so users can verify Goal Source Data parsed correctly
       var goals = up.goals || {};
-      var hasGoals = goals.may_actual != null || goals.may_goal != null || goals['Overall May Cases'] != null;
-      row('data','Production Goals', hasGoals ? 'green' : 'amber',
-          hasGoals ? 'May targets + actuals loaded' : 'No goal data — Leadership KPIs may show "—"',
-          hasGoals ? 'present' : 'missing');
+      var ma = goals.may_actual || 0;
+      var mg = goals.may_goal || 0;
+      var hasGoals = ma >= 1000 || mg >= 1000;
+      var goalDetail = hasGoals
+        ? 'May actual=' + ma.toLocaleString() + ' goal=' + mg.toLocaleString()
+        : 'No May rollup found in Goal Source Data — status bars will fall back to batch sums';
+      var goalValue = hasGoals ? (ma.toLocaleString() + '/' + mg.toLocaleString()) : 'missing';
+      row('data','Production Goals', hasGoals ? 'green' : 'amber', goalDetail, goalValue);
       // OEE source
       var hasOEE = up.oee && up.oee.length;
       row('data','OEE Source Data', hasOEE ? 'green' : 'amber',
@@ -667,6 +671,7 @@ function checkDashboards(){
     {file:'HOC_Schedule_Reforecast.html', name:'Schedule Reforecast'},
     {file:'HOC_Procurement_Dashboard.html', name:'Procurement Dashboard'},
     {file:'HOC_Sales_Dashboard.html', name:'Sales & Customer View'},
+    {file:'HOC_Tank_Board.html', name:'Compound Tank Board'},
     {file:'HOC_Demand_Planning_Hub.html', name:'Demand Planning Hub'},
     {file:'HOC_Event_Engine.html', name:'Event Engine'},
     {file:'HOC_Continuous_Improvement.html', name:'Continuous Improvement'},

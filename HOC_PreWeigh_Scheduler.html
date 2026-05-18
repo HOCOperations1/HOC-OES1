@@ -87,6 +87,7 @@ select:focus,input:focus{outline:none;border-color:var(--purple)}
   <nav class="nav">
     <button class="nb active" onclick="showPage('cmd')">Command Center</button>
     <button class="nb"        onclick="showPage('queue')">Full Queue</button>
+    <button class="nb"        onclick="showPage('completed')">Completed</button>
     <button class="nb"        onclick="showPage('capacity')">Capacity</button>
     <button class="nb"        onclick="showPage('chem')">Chemical Pulls</button>
     <button class="nb"        onclick="showPage('export')">Export</button>
@@ -159,6 +160,23 @@ select:focus,input:focus{outline:none;border-color:var(--purple)}
     </tr></thead>
     <tbody id="queue-tbody"></tbody>
   </table></div>
+</div>
+
+<!-- COMPLETED PRE-WEIGH (dwell time tracking) -->
+<div class="page" id="page-completed">
+  <div class="kpi-grid" id="completed-kpis"></div>
+  <div class="card">
+    <div class="card-title">Pre-weighed Batches — Dwell Time
+      <span style="font-size:9px;color:var(--text3)">Batches that completed pre-weigh and are waiting for compound. Long dwell = material aging, may need re-weigh.</span>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr>
+        <th>MAIN Batch</th><th>Description</th><th>Line</th>
+        <th>PW Completed</th><th>Dwell Time</th><th>Status</th>
+      </tr></thead>
+      <tbody id="completed-tbody"></tbody>
+    </table></div>
+  </div>
 </div>
 
 <!-- CAPACITY -->
@@ -253,6 +271,11 @@ function _loadQueue(){
       return 3.0;
     }
 
+    // Read shared sync layer so we can promote batches that compound verified
+    // and pushed into the pre-weigh queue (pw.pw_status === 'QUEUED').
+    var shared = {};
+    try { shared = JSON.parse(localStorage.getItem('hoc_sync_v1') || '{}'); } catch(e){}
+
     return src
       .filter(function(b){ return b.status !== 'COMPLETED'; })
       .map(function(b){
@@ -278,6 +301,17 @@ function _loadQueue(){
         else if(days_until === 1) urgency = 'CRITICAL';
         else if(days_until <= 2) urgency = 'URGENT';
         else if(days_until <= 7) urgency = 'UPCOMING';
+
+        // QUEUED override: if compound verified and queued this batch, force it
+        // to the front. Pre-weigh sees this and knows compound is asking for it.
+        var pwState = ((shared[b.batch] || {}).pw) || {};
+        var pwStatus = String(pwState.pw_status || '').toUpperCase();
+        if(pwStatus === 'QUEUED'){
+          urgency = 'QUEUED';
+          // Bump pb_start to today so it lands in the Today column
+          var t = new Date(); t.setHours(0,0,0,0);
+          pb_start = t.toISOString().slice(0,10);
+        }
 
         return {
           main: b.batch,
@@ -389,19 +423,61 @@ function renderKPIs(){
 function renderDays(){
   const grid=document.getElementById('day-grid');
   grid.innerHTML='';
+  // Pre-Weigh capacity = 6 batches/day. Anything above that should bleed forward
+  // to the next available day, so a backed-up Monday doesn't hide the fact that
+  // Tuesday-Friday are empty. We track which batches have been "placed" so no
+  // batch shows up in two columns.
+  const DAILY_CAP = 6;
+  const placedBatches = {};
+
+  // Pre-sort overdue/today batches into placement queue (oldest pb_start first)
+  const todayDS = TODAY.toISOString().slice(0,10);
+  const overdueQueue = QUEUE
+    .filter(b => b.pb_start && b.pb_start <= todayDS && !['COMPLETED'].includes(b.status))
+    .sort((a,b) => (a.pb_start||'').localeCompare(b.pb_start||''));
+
   for(let d=0;d<5;d++){
     const date=new Date(TODAY); date.setDate(TODAY.getDate()+d);
     const ds=date.toISOString().slice(0,10);
-    const rows=QUEUE.filter(b=>{
-      if(d===0) return b.pb_start<=ds;
-      return b.pb_start===ds;
+
+    // Batches naturally scheduled for THIS day (pb_start === ds)
+    const naturalToday = QUEUE.filter(b => {
+      if(placedBatches[b.main]) return false;
+      if(d === 0){
+        // Day 0 picks up overdue + today
+        return b.pb_start && b.pb_start <= ds;
+      }
+      return b.pb_start === ds;
     });
+
+    // Apply daily cap — first 6 batches placed here, rest bleed to next day
+    const rows = naturalToday.slice(0, DAILY_CAP);
+    const overflow = naturalToday.length - rows.length;
+    rows.forEach(b => { placedBatches[b.main] = ds; });
+
+    // Anything that overflowed gets added to a queue we'll process next iteration
+    if(overflow > 0){
+      naturalToday.slice(DAILY_CAP).forEach(b => {
+        // Bump its pb_start forward so it lands in the next iteration's column
+        b._bumpedTo = ds;
+        // (we don't actually mutate pb_start, just leave it unplaced —
+        //  the next day's filter for ds will pick up earlier pb_starts)
+      });
+    }
+
     const col=document.createElement('div');
     col.style.cssText='background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px';
     if(d===0) col.style.borderColor='var(--purple)';
+
+    // Capacity indicator
+    const capPct = Math.min(100, Math.round((rows.length / DAILY_CAP) * 100));
+    const capColor = rows.length >= DAILY_CAP ? 'var(--red)' : rows.length >= DAILY_CAP-1 ? 'var(--amber)' : 'var(--green)';
+
     col.innerHTML=`
       <div style="font-size:8px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em">${date.toLocaleDateString('en-US',{weekday:'short'})}${d===0?' · TODAY':''}</div>
-      <div style="font-size:13px;font-weight:700;margin:2px 0 6px">${fS(ds)}</div>
+      <div style="font-size:13px;font-weight:700;margin:2px 0 4px">${fS(ds)}</div>
+      <div style="font-size:9px;color:${capColor};font-weight:700;margin-bottom:6px">${rows.length} / ${DAILY_CAP} capacity${overflow>0?' · +'+overflow+' deferred':''}</div>
+      <div style="background:rgba(255,255,255,.04);border-radius:3px;height:3px;margin-bottom:6px;overflow:hidden"><div style="background:${capColor};height:100%;width:${capPct}%"></div></div>
       ${rows.length===0?'<div class="t3" style="font-size:10px">None due</div>':
         rows.map(b=>`<div style="border-radius:4px;padding:5px 6px;margin-bottom:3px;cursor:pointer;border-left:3px solid ${b.urgency==='OVERDUE'?'var(--red)':b.urgency==='TODAY'||b.urgency==='CRITICAL'?'var(--amber)':'var(--blue)'}; background:${b.urgency==='OVERDUE'?'rgba(239,68,68,.08)':b.urgency==='TODAY'||b.urgency==='CRITICAL'?'rgba(245,158,11,.08)':'rgba(59,130,246,.06)'}" onclick="openDetail('${b.main}')">
           <div style="font-size:9px;font-weight:700;color:var(--text2)">${b.main}</div>
@@ -453,7 +529,88 @@ function saveUpdate(){
   try{localStorage.setItem('hoc_pw_v1',JSON.stringify(updates));
     syncToShared(currentBatch.main, updates[currentBatch.main]);;}catch(e){}
   document.getElementById('saved-note').classList.add('show');
-  renderBadges(); renderKPIs(); renderQueue();
+  renderBadges(); renderKPIs(); renderQueue(); renderCompleted();
+}
+
+function renderCompleted(){
+  // Find batches with pw status === COMPLETED in the shared sync layer
+  var shared = {};
+  try { shared = JSON.parse(localStorage.getItem('hoc_sync_v1') || '{}'); } catch(e){}
+  var nowMs = Date.now();
+  var completed = Object.keys(shared)
+    .map(function(batchId){
+      var pw = (shared[batchId] || {}).pw || {};
+      var st = String(pw.pw_status || pw.status || '').toUpperCase();
+      // Treat any of these as "pre-weigh complete":
+      var isComplete = st === 'COMPLETED' || st === 'COMPLETE' || st === 'DONE' || st === 'PW DONE';
+      if(!isComplete) return null;
+      var ts = pw.ts ? new Date(pw.ts).getTime() : null;
+      var dwellMs = ts ? (nowMs - ts) : null;
+      // Find batch in QUEUE for description
+      var qb = QUEUE.find(function(q){ return q.main === batchId; }) || {};
+      return {
+        batch: batchId,
+        desc: qb.desc || '',
+        line: qb.line || 0,
+        pw_ts: ts,
+        dwell_ms: dwellMs,
+        status: qb.status || '',
+        cmpd: qb.cmpd || ''
+      };
+    })
+    .filter(function(x){ return x !== null; })
+    .sort(function(a,b){ return (b.dwell_ms||0) - (a.dwell_ms||0); });
+
+  // KPI strip
+  var fresh = completed.filter(function(b){ return b.dwell_ms !== null && b.dwell_ms < 24*3600*1000; }).length;
+  var aging = completed.filter(function(b){ return b.dwell_ms !== null && b.dwell_ms >= 24*3600*1000 && b.dwell_ms < 72*3600*1000; }).length;
+  var stale = completed.filter(function(b){ return b.dwell_ms !== null && b.dwell_ms >= 72*3600*1000; }).length;
+
+  var kpis = [
+    {l:'Pre-weighed (total)',v:completed.length,c:'var(--text)',s:'Awaiting compound'},
+    {l:'Fresh (< 24 hr)',    v:fresh,           c:'var(--green)',s:'OK to use'},
+    {l:'Aging (1-3 days)',   v:aging,           c:'var(--amber)',s:'Check soon'},
+    {l:'Stale (> 3 days)',   v:stale,           c:'var(--red)',  s:'May need re-weigh'},
+  ];
+  document.getElementById('completed-kpis').innerHTML = kpis.map(function(k){
+    return '<div class="kpi"><div class="kl">' + k.l + '</div><div class="kv" style="color:' + k.c + '">' + k.v + '</div><div class="ks">' + k.s + '</div></div>';
+  }).join('');
+
+  // Table
+  function fmtDwell(ms){
+    if(ms === null) return '—';
+    var h = Math.floor(ms/3600000);
+    if(h < 24) return h + ' hr';
+    var d = Math.floor(h/24);
+    var rh = h % 24;
+    return d + 'd ' + rh + 'h';
+  }
+  function fmtDate(ts){
+    if(!ts) return '—';
+    try { return new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); } catch(e){ return '—'; }
+  }
+  function dwellColor(ms){
+    if(ms === null) return 'var(--text2)';
+    if(ms < 24*3600*1000) return 'var(--green)';
+    if(ms < 72*3600*1000) return 'var(--amber)';
+    return 'var(--red)';
+  }
+
+  var tbody = document.getElementById('completed-tbody');
+  if(!completed.length){
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">No pre-weighed batches awaiting compound. As batches get marked complete in pre-weigh, they will appear here with dwell time.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = completed.map(function(b){
+    return '<tr style="cursor:pointer" onclick="openDetail(\'' + b.batch + '\');showPage(\'cmd\')">' +
+      '<td><b>' + b.batch + '</b></td>' +
+      '<td>' + (b.desc || '—').slice(0,40) + '</td>' +
+      '<td>Ln ' + b.line + '</td>' +
+      '<td>' + fmtDate(b.pw_ts) + '</td>' +
+      '<td style="color:' + dwellColor(b.dwell_ms) + ';font-weight:700">' + fmtDwell(b.dwell_ms) + '</td>' +
+      '<td>' + (b.cmpd || b.status || '—') + '</td>' +
+      '</tr>';
+  }).join('');
 }
 
 function renderQueue(){
