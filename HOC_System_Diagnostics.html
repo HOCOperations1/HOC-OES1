@@ -136,9 +136,32 @@ body{background:var(--bg);color:var(--text);font:13px/1.4 -apple-system,BlinkMac
   </div>
 
   <div class="muted" style="text-align:center;margin-top:16px">
-    Diagnostics page · v1.0 · part of HOC-OES bundle
+    Diagnostics page · <span id="bundle-version">checking…</span> · part of HOC-OES bundle
   </div>
 </div>
+
+<script>
+// Read actual bundle version from the active service worker cache.
+// This used to say "v1.0" forever — now it shows what's really running.
+(async function(){
+  try {
+    if('caches' in window){
+      var names = await caches.keys();
+      var hoc = names.find(function(n){ return n.indexOf('hoc-oes-v') === 0; });
+      if(hoc){
+        // Extract just the version part: 'hoc-oes-v6.11-20260518' → 'v6.11'
+        var match = hoc.match(/hoc-oes-(v[\d.]+)/);
+        if(match) document.getElementById('bundle-version').textContent = match[1];
+        else document.getElementById('bundle-version').textContent = hoc;
+        return;
+      }
+    }
+    document.getElementById('bundle-version').textContent = 'no service worker cache';
+  } catch(e){
+    document.getElementById('bundle-version').textContent = 'version unknown';
+  }
+})();
+</script>
 
 <script>
 // ── Supabase config (mirrors index.html) ─────────────────────────────
@@ -490,11 +513,13 @@ function checkSupabase(){
     return;
   }
 
-  // Quick connectivity test
-  fetch(SUPA_URL+'/rest/v1/', {headers: H()})
+  // Quick connectivity test — use a real table endpoint since /rest/v1/ root
+  // requires service_role auth (publishable/anon keys can only access tables
+  // with RLS policies, not enumerate the API). A 200 from any table = auth works.
+  fetch(SUPA_URL+'/rest/v1/hoc_batches?select=id&limit=1', {headers: H()})
     .then(function(r){
       row('supa','Connectivity', r.ok ? 'green' : 'red',
-          r.ok ? 'API responding' : 'HTTP ' + r.status,
+          r.ok ? 'API responding — auth OK' : 'HTTP ' + r.status + ' — check key',
           r.status);
       renderSection('supa','supa');
       updateSummary();

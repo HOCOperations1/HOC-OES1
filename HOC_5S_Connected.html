@@ -4883,48 +4883,52 @@ function printCl(clId){
       .catch(function() { return []; });
   }
 
-  // Intercept localStorage writes to hoc_sync_v1 and mirror to Supabase
+  // Intercept localStorage writes to hoc_sync_v1 and mirror to Supabase.
+  // Heartbeat pattern: hoc_sync_bus has ONE row (id=1) with a 'payload' jsonb.
+  // We upsert the full state to that single row on every change.
   var _origSetItem = localStorage.setItem.bind(localStorage);
   localStorage.setItem = function(key, val) {
     _origSetItem(key, val);
     if (key !== 'hoc_sync_v1') return;
     try {
-      var data = JSON.parse(val);
-      Object.keys(data).forEach(function(batch) {
-        var sections = data[batch];
-        if (typeof sections !== 'object') return;
-        Object.keys(sections).forEach(function(section) {
-          sbPost('hoc_sync_bus', {
-            batch: batch,
-            section: section,
-            data: sections[section],
-            updated_at: new Date().toISOString()
-          });
-        });
+      var fullState = JSON.parse(val);
+      sbPost('hoc_sync_bus', {
+        id: 1,
+        payload: fullState,
+        updated_at: new Date().toISOString()
       });
     } catch(e) {}
   };
 
-  // Poll Supabase every 15 seconds for updates from other devices
-  var lastCheck = new Date().toISOString();
+  // Cross-device sync — heartbeat pattern.
+  // hoc_sync_bus has ONE row (id=1) with a 'payload' jsonb column. All devices
+  // upsert to that row; all devices poll it. If updated_at moved forward and
+  // payload differs from what we last saw, merge it into localStorage.
+  var lastUpdatedAt = null;
   setInterval(function() {
-    var checkFrom = lastCheck;
-    lastCheck = new Date().toISOString();
     sbGet('hoc_sync_bus',
-      'updated_at=gt.' + encodeURIComponent(checkFrom) + 
-      '&select=batch,section,data&order=updated_at.asc&limit=100'
+      'id=eq.1&select=updated_at,payload'
     ).then(function(rows) {
       if (!rows || !rows.length) return;
+      var row = rows[0];
+      if (!row || !row.updated_at) return;
+      if (lastUpdatedAt && row.updated_at <= lastUpdatedAt) return;
+      lastUpdatedAt = row.updated_at;
+      var remote = row.payload;
+      if (!remote || typeof remote !== 'object') return;
       try {
         var local = JSON.parse(localStorage.getItem('hoc_sync_v1') || '{}');
         var changed = false;
-        rows.forEach(function(row) {
-          if (!row || !row.batch || !row.section) return;
-          if (!local[row.batch]) local[row.batch] = {};
-          local[row.batch][row.section] = Object.assign(
-            local[row.batch][row.section] || {}, row.data || {}
-          );
-          changed = true;
+        Object.keys(remote).forEach(function(batch) {
+          var sections = remote[batch];
+          if (typeof sections !== 'object' || !sections) return;
+          if (!local[batch]) local[batch] = {};
+          Object.keys(sections).forEach(function(section) {
+            local[batch][section] = Object.assign(
+              local[batch][section] || {}, sections[section] || {}
+            );
+            changed = true;
+          });
         });
         if (changed) {
           // Write without triggering our interceptor to avoid loop

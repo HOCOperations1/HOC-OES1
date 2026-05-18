@@ -8,6 +8,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta name="theme-color" content="#0B0E17">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="HOC-OES">
 <link rel="manifest" href="manifest.json">
 <title>HOC-OES</title>
@@ -1209,41 +1211,46 @@ function closeQuickStart(){
     if (key !== 'hoc_sync_v1') return;
     try {
       var data = JSON.parse(val);
-      Object.keys(data).forEach(function(batch) {
-        var sections = data[batch];
-        if (typeof sections !== 'object') return;
-        Object.keys(sections).forEach(function(section) {
-          sbPost('hoc_sync_bus', {
-            batch: batch,
-            section: section,
-            data: sections[section],
-            updated_at: new Date().toISOString()
-          });
-        });
+      // SINGLE-ROW BROADCAST PATTERN
+      // hoc_sync_bus schema: { id=1, updated_at, payload jsonb }
+      // We upsert the entire local sync state into the single row (id=1).
+      // Other devices poll, see updated_at change, and pull the new payload.
+      sbPost('hoc_sync_bus', {
+        id: 1,
+        updated_at: new Date().toISOString(),
+        payload: data
       });
     } catch(e) {}
   };
 
   // Poll Supabase every 15 seconds for updates from other devices
-  var lastCheck = new Date().toISOString();
+  var lastUpdatedAt = null;
   setInterval(function() {
-    var checkFrom = lastCheck;
-    lastCheck = new Date().toISOString();
     sbGet('hoc_sync_bus',
-      'updated_at=gt.' + encodeURIComponent(checkFrom) + 
-      '&select=batch,section,data&order=updated_at.asc&limit=100'
+      'id=eq.1&select=updated_at,payload'
     ).then(function(rows) {
       if (!rows || !rows.length) return;
+      var row = rows[0];
+      if (!row || !row.updated_at) return;
+      // Only merge if updated_at is newer than what we last saw
+      if (lastUpdatedAt && row.updated_at <= lastUpdatedAt) return;
+      lastUpdatedAt = row.updated_at;
+      var remote = row.payload;
+      if (!remote || typeof remote !== 'object') return;
       try {
         var local = JSON.parse(localStorage.getItem('hoc_sync_v1') || '{}');
         var changed = false;
-        rows.forEach(function(row) {
-          if (!row || !row.batch || !row.section) return;
-          if (!local[row.batch]) local[row.batch] = {};
-          local[row.batch][row.section] = Object.assign(
-            local[row.batch][row.section] || {}, row.data || {}
-          );
-          changed = true;
+        // Merge remote payload into local — section-by-section, no clobber.
+        Object.keys(remote).forEach(function(batch) {
+          var remoteSections = remote[batch];
+          if (typeof remoteSections !== 'object') return;
+          if (!local[batch]) local[batch] = {};
+          Object.keys(remoteSections).forEach(function(section) {
+            local[batch][section] = Object.assign(
+              local[batch][section] || {}, remoteSections[section] || {}
+            );
+            changed = true;
+          });
         });
         if (changed) {
           // Write without triggering our interceptor to avoid loop

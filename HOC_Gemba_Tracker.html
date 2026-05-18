@@ -336,16 +336,20 @@ function syncSet(batch, section, data) {
     localStorage.setItem('hoc_sync_v1', JSON.stringify(local));
   } catch(e) {}
 
-  // Then write to Supabase (real-time, cross-device)
-  sbFetch('POST', 'hoc_sync_bus', {
-    batch: batch,
-    section: section,
-    data: data,
-    updated_at: new Date().toISOString(),
-    updated_by: 'floor'
-  }, null).then(function(r) {
-    if (r && !r.ok) console.warn('Supabase sync write failed:', r.status);
-  });
+  // Then mirror full localStorage state to Supabase single-row heartbeat.
+  // hoc_sync_bus has schema { id=1, updated_at, payload jsonb } and is upserted
+  // by every device. Use Prefer: resolution=merge-duplicates so id=1 conflicts
+  // don't error — they update the existing row instead.
+  try {
+    var fullState = JSON.parse(localStorage.getItem('hoc_sync_v1') || '{}');
+    sbFetch('POST', 'hoc_sync_bus', {
+      id: 1,
+      payload: fullState,
+      updated_at: new Date().toISOString()
+    }, null).then(function(r) {
+      if (r && !r.ok) console.warn('Supabase sync write failed:', r.status);
+    });
+  } catch(e) { console.warn('Sync write threw:', e); }
 }
 
 // ── Sync bus: read from Supabase, fallback to localStorage ────────────
@@ -390,34 +394,42 @@ function syncGet(batch) {
 function initSupabaseRealtime() {
   // Poll Supabase every 15 seconds for changes (WebSocket in Phase 3)
   // This is the cross-device sync - catches updates from other users
-  var lastCheck = new Date().toISOString();
-  
+  // Cross-device sync — heartbeat pattern.
+  // hoc_sync_bus has ONE row (id=1) with a 'payload' jsonb column. All devices
+  // upsert to that row; all devices poll it. If updated_at moved forward and
+  // payload differs from what we last saw, merge it into localStorage.
+  var lastUpdatedAt = null;
+
   setInterval(function() {
-    var checkTime = lastCheck;
-    lastCheck = new Date().toISOString();
-    
     sbFetch('GET', 'hoc_sync_bus', null,
-      'updated_at=gt.' + encodeURIComponent(checkTime) + 
-      '&select=batch,section,data&order=updated_at.asc'
+      'id=eq.1&select=updated_at,payload'
     ).then(function(r) {
       if (!r || !r.ok) return;
       return r.json();
     }).then(function(rows) {
       if (!rows || !rows.length) return;
-      // Merge new data into localStorage
+      var row = rows[0];
+      if (!row || !row.updated_at) return;
+      if (lastUpdatedAt && row.updated_at <= lastUpdatedAt) return;
+      lastUpdatedAt = row.updated_at;
+      var remote = row.payload;
+      if (!remote || typeof remote !== 'object') return;
       try {
         var local = JSON.parse(localStorage.getItem('hoc_sync_v1') || '{}');
         var hasChanges = false;
-        rows.forEach(function(row) {
-          if (!local[row.batch]) local[row.batch] = {};
-          local[row.batch][row.section] = Object.assign(
-            local[row.batch][row.section] || {}, row.data
-          );
-          hasChanges = true;
+        Object.keys(remote).forEach(function(batch) {
+          var sections = remote[batch];
+          if (typeof sections !== 'object' || !sections) return;
+          if (!local[batch]) local[batch] = {};
+          Object.keys(sections).forEach(function(section) {
+            local[batch][section] = Object.assign(
+              local[batch][section] || {}, sections[section] || {}
+            );
+            hasChanges = true;
+          });
         });
         if (hasChanges) {
           localStorage.setItem('hoc_sync_v1', JSON.stringify(local));
-          // Trigger re-render
           try { renderAll(); } catch(e) {
             try { renderBadges(); } catch(e2) {}
           }
