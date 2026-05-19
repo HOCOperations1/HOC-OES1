@@ -356,6 +356,35 @@ textarea{width:100%;resize:vertical;min-height:50px;margin-top:4px}
     </table></div>
   </div>
 
+  <!-- Vicinity Labor Validation -->
+  <div class="card">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+      <span>⚖ Vicinity Labor Validation — current STD.cy vs Vicinity-derived projection</span>
+      <span id="ct-labor-meta" style="font-size:9px;color:var(--text3);font-weight:400">— no labor extract loaded —</span>
+    </div>
+    <p style="font-size:10px;color:var(--text2);margin:2px 0 8px 0;line-height:1.6">
+      The current <strong>STD.cy</strong> in this scheduler was built from multiple sources (batch sheets, tracker, tribal knowledge) — it's already a curated number. This card uses the Vicinity Fill Labor Extract (Hours/LB × batch lbs) as a <strong>second opinion</strong>: when the variance ≥ 15%, investigate. Vicinity is a contributor, not a replacement. Upload the Fill Labor Extract in Data Upload Hub.
+    </p>
+    <div style="margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="ct-labor-filter" placeholder="Filter by formula or product…" oninput="renderLaborValidation()" style="font:inherit;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 8px;width:240px">
+      <label style="font-size:10px;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer">
+        <input type="checkbox" id="ct-labor-variance-only" onchange="renderLaborValidation()" checked> Show only variance ≥ 15%
+      </label>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr>
+        <th>Formula</th><th>Product</th>
+        <th style="text-align:right">STD.cy</th>
+        <th style="text-align:right">Vicinity hrs/lb</th>
+        <th style="text-align:right">Sample lbs</th>
+        <th style="text-align:right">Vicinity proj hrs</th>
+        <th style="text-align:right">Variance</th>
+        <th>Verdict</th>
+      </tr></thead>
+      <tbody id="ct-labor-tbody"></tbody>
+    </table></div>
+  </div>
+
   <!-- Missing -->
   <div class="card">
     <div class="card-title">Tracker formulas with no batch sheet data — 14 formulas</div>
@@ -1088,6 +1117,127 @@ function renderCycle(){
       '<td style="color:var(--text2);font-size:10px">'+(m.note||'')+'</td></tr>';
   });
   document.getElementById('ct-miss-tbody').innerHTML = mh;
+
+  // Render labor validation card last (depends on the loaded labor standards)
+  renderLaborValidation();
+}
+
+// ── VICINITY LABOR VALIDATION ────────────────────────────────────────
+// Reads hoc_labor_standards_v1 (uploaded via Data Upload Hub) and compares
+// each formula's current STD.cy against a Vicinity-derived projection:
+//   vicinity_hrs = comp_time (Hours/LB) × representative_lbs
+// Representative lbs comes from the formula's STD.lbs (the typical batch size).
+// If batches list a different lbs, we'd average — STD.lbs is consistent enough
+// for variance flagging. Variance ≥ 15% surfaces as a flag.
+function renderLaborValidation(){
+  var tbody = document.getElementById('ct-labor-tbody');
+  var meta  = document.getElementById('ct-labor-meta');
+  if(!tbody) return;
+
+  var laborData = null;
+  try { laborData = JSON.parse(localStorage.getItem('hoc_labor_standards_v1') || 'null'); } catch(e){}
+
+  if(!laborData || !laborData.standards){
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:18px">' +
+      'No Vicinity labor extract loaded. Go to <a href="HOC_Data_Upload_Hub.html" style="color:var(--blue)">Data Upload Hub</a> and drop the Fill Labor Extract XLSX in the "⏱ Fill Labor Extract" zone.' +
+      '</td></tr>';
+    meta.textContent = '— no labor extract loaded —';
+    return;
+  }
+
+  // Show file age in the header — important since the extract may be stale
+  var ageStr = '';
+  if(laborData._updated){
+    var ageMs = Date.now() - new Date(laborData._updated).getTime();
+    var ageDays = Math.floor(ageMs / 86400000);
+    ageStr = ageDays < 1 ? 'just now' : ageDays === 1 ? '1 day ago' : ageDays + ' days ago';
+    if(ageDays >= 60) ageStr += ' ⚠ stale';
+  }
+  var stats = laborData.stats || {};
+  meta.textContent = (stats.formulas || 0) + ' formulas in extract' + (ageStr ? ' · loaded ' + ageStr : '');
+
+  var filterEl = document.getElementById('ct-labor-filter');
+  var q = (filterEl ? filterEl.value : '').toLowerCase().trim();
+  var varianceOnly = document.getElementById('ct-labor-variance-only');
+  varianceOnly = varianceOnly ? varianceOnly.checked : true;
+
+  // Build comparison rows for every formula in STD that also has a labor entry
+  var rows = [];
+  Object.keys(STD).forEach(function(fid){
+    var std = STD[fid];
+    var labor = laborData.standards[fid];
+    if(!labor || !labor.comp_time) return;
+    if(!std.lbs) return;  // can't project without representative lbs
+
+    var stdCy = std.cy || 0;
+    var compTimePerLb = labor.comp_time;  // Hours/LB
+    var projectedHrs = compTimePerLb * std.lbs;
+    var variance = stdCy > 0 ? ((projectedHrs - stdCy) / stdCy) * 100 : null;
+    var absVar = variance != null ? Math.abs(variance) : 0;
+
+    rows.push({
+      formula: fid,
+      product: std.n || labor.description || '',
+      std_cy: stdCy,
+      vic_per_lb: compTimePerLb,
+      lbs: std.lbs,
+      projected: projectedHrs,
+      variance_pct: variance,
+      abs_var: absVar
+    });
+  });
+
+  // Filter
+  if(q){
+    rows = rows.filter(function(r){
+      return r.formula.toLowerCase().indexOf(q) >= 0 ||
+             String(r.product||'').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  if(varianceOnly){
+    rows = rows.filter(function(r){ return r.abs_var >= 15; });
+  }
+
+  // Sort by absolute variance descending so biggest discrepancies bubble up
+  rows.sort(function(a,b){ return b.abs_var - a.abs_var; });
+
+  if(!rows.length){
+    var msg = varianceOnly
+      ? 'No formulas with ≥ 15% variance. Uncheck "variance only" to see all matched formulas.'
+      : 'No formulas overlap between STD and Vicinity extract. Either the formula IDs don\'t match or STD has no lbs/cy set.';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:14px;font-style:italic">' + msg + '</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.slice(0, 200).map(function(r){
+    var varStr, varColor, verdict;
+    if(r.variance_pct == null){
+      varStr = '—'; varColor = 'var(--text3)'; verdict = 'no STD.cy to compare';
+    } else {
+      var sign = r.variance_pct > 0 ? '+' : '';
+      varStr = sign + r.variance_pct.toFixed(0) + '%';
+      if(r.abs_var >= 30){
+        varColor = 'var(--red)';
+        verdict = r.variance_pct > 0
+          ? '<span class="pill" style="background:rgba(239,68,68,.15);color:#F87171;border:1px solid rgba(239,68,68,.3)">STD too low</span>'
+          : '<span class="pill" style="background:rgba(239,68,68,.15);color:#F87171;border:1px solid rgba(239,68,68,.3)">STD too high</span>';
+      } else if(r.abs_var >= 15){
+        varColor = 'var(--amber)';
+        verdict = '<span class="pill" style="background:rgba(245,158,11,.15);color:#FBBF24;border:1px solid rgba(245,158,11,.3)">investigate</span>';
+      } else {
+        varColor = 'var(--green)';
+        verdict = '<span class="pill" style="background:rgba(16,185,129,.15);color:#34D399;border:1px solid rgba(16,185,129,.3)">aligned</span>';
+      }
+    }
+    return '<tr><td><strong>F.'+r.formula+'</strong></td>' +
+      '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.product+'</td>' +
+      '<td style="text-align:right;font-weight:700">'+r.std_cy.toFixed(1)+' h</td>' +
+      '<td style="text-align:right;color:var(--text3);font-size:9px">'+r.vic_per_lb.toExponential(2)+'</td>' +
+      '<td style="text-align:right;color:var(--text3)">'+r.lbs.toLocaleString()+'</td>' +
+      '<td style="text-align:right">'+r.projected.toFixed(2)+' h</td>' +
+      '<td style="text-align:right;color:'+varColor+';font-weight:700">'+varStr+'</td>' +
+      '<td>'+verdict+'</td></tr>';
+  }).join('');
 }
 
 function renderCycleAll(){

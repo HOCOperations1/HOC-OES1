@@ -994,24 +994,43 @@ function renderKPIs(){
   const od  =mayBatches.filter(b=>(b.cmpd==='COMPOUND OVERDUE'||b.cmpd==='COMPOUND CRITICAL')&&getStatus(b)!=='COMPLETED').length;
   const ar  =mayBatches.filter(b=>b.cmpd==='COMPOUND AT RISK'&&getStatus(b)!=='COMPLETED').length;
 
-  // ── Cases: PREFER Goal Source Data values (the single source of truth) ─
-  // Goal Source Data row 20 in Production Tracker has the official monthly
-  // rollup that the planner maintains. The Data Upload Hub parses this into
-  // _UPLOAD.goals.may_actual / may_goal. We use those values directly when
-  // available, since they reflect the planner's authoritative number — not
-  // a recomputation from individual batches that might count things twice
-  // or miss bulk/component batches.
+  // ── Cases: PRIORITY ORDER (matches index.html for KPI consistency)
+  //   1. hoc_attainment_v1 — pasted Case Attainment sheet (most authoritative,
+  //      reflects planner's official rollup including all bulk/component math)
+  //   2. Goal Source Data row 20 from Production Tracker upload (legacy path)
+  //   3. Sum of COMPLETED batch actuals (last-resort fallback)
+  // When the planner pastes the monthly attainment sheet into Data Upload
+  // Hub, every dashboard's case KPIs flip to those numbers automatically.
   var monthCompletedCases, monthPlannedCases;
   var caseSource = 'computed from batches';
   var uploadGoals = (_UPLOAD && _UPLOAD.goals) || {};
 
-  if(uploadGoals.may_actual >= 1000 || uploadGoals.may_goal >= 1000){
-    // Authoritative — use the planner's monthly rollup
+  // Source 1: pasted attainment
+  var attainmentData = null;
+  try { attainmentData = JSON.parse(localStorage.getItem('hoc_attainment_v1') || 'null'); } catch(e){}
+  var attainmentPctFromPaste = null;  // plant cumulative attainment % from paste, if available
+
+  if(attainmentData && attainmentData.plant && attainmentData.plant.cum_actual != null && attainmentData.plant.net_req != null){
+    monthCompletedCases = Number(attainmentData.plant.cum_actual);
+    monthPlannedCases   = Number(attainmentData.plant.net_req);
+    caseSource = 'Attainment paste · ' + (attainmentData._month_label || 'current');
+    // Also extract plant-level cumulative attainment % (use last non-null week)
+    if(Array.isArray(attainmentData.plant.wks)){
+      for(var wi = attainmentData.plant.wks.length - 1; wi >= 0; wi--){
+        var wk = attainmentData.plant.wks[wi];
+        if(wk && wk.attainment_cum_pct != null && wk.attainment_cum_pct > 0){
+          attainmentPctFromPaste = Math.round(wk.attainment_cum_pct);
+          break;
+        }
+      }
+    }
+  } else if(uploadGoals.may_actual >= 1000 || uploadGoals.may_goal >= 1000){
+    // Source 2: Goal Source Data (legacy path)
     monthCompletedCases = Number(uploadGoals.may_actual) || 0;
     monthPlannedCases   = Number(uploadGoals.may_goal)   || 0;
     caseSource = 'Goal Source Data';
   } else {
-    // Fallback — sum from individual May batches (deduped by batch number)
+    // Source 3: sum batches (last resort)
     monthCompletedCases = 0;
     monthPlannedCases = 0;
     var seenBatches = {};
@@ -1035,6 +1054,13 @@ function renderKPIs(){
       if(goals && goals.attainment_target) attainGoal = goals.attainment_target;
     }
   } catch(e) {}
+  // Goal % from pasted attainment overrides hardcoded default when available
+  if(attainmentData && attainmentData.plant && Array.isArray(attainmentData.plant.wks)){
+    for(var gi = 0; gi < attainmentData.plant.wks.length; gi++){
+      var gw = attainmentData.plant.wks[gi];
+      if(gw && gw.goal_pct != null && gw.goal_pct > 0){ attainGoal = gw.goal_pct; break; }
+    }
+  }
 
   // ── Live OEE — from Patch line values; blank if no Patch upload yet
   // (was diluted by unstarted batches before — now honest "—" when no data)
@@ -1050,18 +1076,27 @@ function renderKPIs(){
     }
   } catch(e){ console.warn('OEE calc failed', e); }
 
-  // ── Attainment — from Patch line values; blank if no Patch upload yet
+  // ── Attainment — PRIORITY ORDER
+  //   1. hoc_attainment_v1 plant cumulative attainment % (best — it's the
+  //      planner's own number)
+  //   2. Patch per-line att_by_line average (legacy)
+  //   3. None — show "—"
   var liveAttainment = null;
   var attSource = '';
-  try {
-    var attMap = uploadGoals.att_by_line || {};
-    var attValues = Object.values(attMap).filter(function(v){ return v > 0; });
-    if(attValues.length){
-      var asum = attValues.reduce(function(a,b){ return a+b; }, 0);
-      liveAttainment = Math.round(asum / attValues.length);
-      attSource = attValues.length + ' lines (Patch)';
-    }
-  } catch(e){}
+  if(attainmentPctFromPaste != null){
+    liveAttainment = attainmentPctFromPaste;
+    attSource = 'Plant cum % · attainment paste';
+  } else {
+    try {
+      var attMap = uploadGoals.att_by_line || {};
+      var attValues = Object.values(attMap).filter(function(v){ return v > 0; });
+      if(attValues.length){
+        var asum = attValues.reduce(function(a,b){ return a+b; }, 0);
+        liveAttainment = Math.round(asum / attValues.length);
+        attSource = attValues.length + ' lines (Patch)';
+      }
+    } catch(e){}
+  }
 
   // Render — show "—" for OEE/Attainment when no data, not a fake 49%
   var oeeDisplay = liveOEE != null ? liveOEE+'%' : '—';
@@ -1069,7 +1104,7 @@ function renderKPIs(){
   var oeeColor = liveOEE == null ? 'var(--text3)' : liveOEE>=oeeGoal ? 'var(--green)' : 'var(--red)';
 
   var attDisplay = liveAttainment != null ? liveAttainment+'%' : '—';
-  var attSubtitle = liveAttainment != null ? (attSource+' · vs '+attainGoal+'%') : 'Upload Patch report';
+  var attSubtitle = liveAttainment != null ? (attSource+' · vs '+attainGoal+'%') : 'Upload attainment / Patch';
   var attColor = liveAttainment == null ? 'var(--text3)' : liveAttainment>=attainGoal ? 'var(--green)' : 'var(--red)';
 
   document.getElementById('cmd-kpis').innerHTML=[
