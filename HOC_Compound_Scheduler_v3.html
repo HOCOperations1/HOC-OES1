@@ -167,7 +167,9 @@ textarea{width:100%;resize:vertical;min-height:50px;margin-top:4px}
 <option>Robert Peoples</option>
         </select>
         <span class="su-label">Tank:</span>
-        <input type="text" id="su-tank" placeholder="MT-1" style="width:60px">
+        <select id="su-tank" style="width:160px;font:inherit;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 6px">
+          <option value="">— select tank —</option>
+        </select>
         <span class="su-label">QC Date:</span>
         <input type="date" id="su-qcdate">
         <button class="btn-save" onclick="saveStatus()">Save</button>
@@ -478,6 +480,82 @@ function renderDays(){
   }
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// populateTankDropdown — pulls live tank state from Tank Board's localStorage
+// (hoc_tank_state_v1 + hoc_tank_config_v1) and renders a smart dropdown.
+// Tanks with enough capacity for THIS batch's lbs sort first; "in use" tanks
+// are flagged with status icons but remain selectable. Falls back to a static
+// list (matches Tank Board's seeded data) if Tank Board hasn't been opened yet.
+// ────────────────────────────────────────────────────────────────────────
+function populateTankDropdown(batch){
+  var sel = document.getElementById('su-tank');
+  if(!sel) return;
+  var current = sel.value;
+  var batchLbs = (batch && batch.lbs) || 0;
+
+  // Static fallback list — capacities (gallons × 8 lb/gal) match Tank Board
+  var staticTanks = [
+    {id:'MT-1',  cap_lbs:28800}, {id:'MT-2',  cap_lbs:28800},
+    {id:'MT-3',  cap_lbs:24000}, {id:'MT-4',  cap_lbs:43200},
+    {id:'MT-5',  cap_lbs:12000}, {id:'MT-6',  cap_lbs:12000},
+    {id:'MT-7',  cap_lbs:12000}, {id:'MT-8',  cap_lbs:12000},
+    {id:'MT-9',  cap_lbs:6400},  {id:'MT-10', cap_lbs:8000},
+    {id:'MT-11', cap_lbs:6000},  {id:'MT-12', cap_lbs:6000},
+    {id:'MT-13', cap_lbs:6000},  {id:'MT-18', cap_lbs:16000}
+  ];
+
+  var tanks = staticTanks;
+  var liveStatus = {};
+  try {
+    // First try shared sync layer — this is cross-device aware (Compound
+    // Scheduler's poll pulls Tank Board's state from Supabase sync_bus).
+    var shared = JSON.parse(localStorage.getItem('hoc_sync_v1') || '{}');
+    if(shared.__tanks && shared.__tanks.state){
+      liveStatus = shared.__tanks.state;
+    }
+    // Fallback to local Tank Board storage (same-device only)
+    if(!Object.keys(liveStatus).length){
+      var ts = JSON.parse(localStorage.getItem('hoc_tank_state_v1') || '{}');
+      if(ts && Object.keys(ts).length) liveStatus = ts;
+    }
+    var tc = JSON.parse(localStorage.getItem('hoc_tank_config_v1') || '{}');
+    if(tc && Object.keys(tc).length){
+      tanks = tanks.map(function(t){
+        if(tc[t.id] && tc[t.id].cap_lbs) return Object.assign({}, t, {cap_lbs: tc[t.id].cap_lbs});
+        return t;
+      });
+    }
+  } catch(e){}
+
+  // Sort: fits-batch first, then by capacity ascending (smallest fit first)
+  tanks.sort(function(a,b){
+    var aFits = batchLbs ? (a.cap_lbs >= batchLbs) : true;
+    var bFits = batchLbs ? (b.cap_lbs >= batchLbs) : true;
+    if(aFits !== bFits) return aFits ? -1 : 1;
+    if(a.cap_lbs !== b.cap_lbs) return a.cap_lbs - b.cap_lbs;
+    return a.id.localeCompare(b.id);
+  });
+
+  var opts = '<option value="">— select tank —</option>';
+  tanks.forEach(function(t){
+    var ls = liveStatus[t.id] || {};
+    var st = (ls.status || '').toLowerCase();
+    var fits = batchLbs ? (t.cap_lbs >= batchLbs) : true;
+    var fitMark = !fits ? ' ⚠' : '';
+    var stMark = '';
+    if(st === 'filling')      stMark = ' · filling';
+    else if(st === 'full')    stMark = ' · full';
+    else if(st === 'draining')stMark = ' · draining';
+    else if(st === 'cleaning')stMark = ' · cleaning';
+    else if(st === 'offline') stMark = ' · OFFLINE';
+    var assigned = ls.batch_assigned && ls.batch_assigned !== (batch && batch.main) ? ' · holding '+ls.batch_assigned : '';
+    var label = t.id + fitMark + ' (' + t.cap_lbs.toLocaleString() + ' lb)' + stMark + assigned;
+    opts += '<option value="'+t.id+'">'+label+'</option>';
+  });
+  sel.innerHTML = opts;
+  if(current) sel.value = current;
+}
+
 function openDetail(main){
   const b=BATCHES.find(x=>x.main===main);if(!b)return;
   currentBatch=b;
@@ -500,6 +578,11 @@ function openDetail(main){
   document.getElementById('su-status').value=u.status||'';
   document.getElementById('su-name').value=u.name||'';
   document.getElementById('su-pbname').value=u.pbname||'';
+  // ── TANK DROPDOWN: pull from Tank Board's live state ──
+  // Tank Board stores in hoc_tank_state_v1 (config) and shared sync layer.
+  // We show: tank id, capacity, status — and highlight tanks whose capacity
+  // can hold THIS batch's lbs.
+  populateTankDropdown(b);
   document.getElementById('su-tank').value=u.tank||'';
   document.getElementById('su-qcdate').value=u.qcdate||'';
   // QC fields
@@ -826,6 +909,13 @@ async function pollRemoteUpdates(){
     });
     if(changed){
       localStorage.setItem('hoc_sync_v1', JSON.stringify(shared));
+      // ── Re-render Schedule by Line so the PB Status pills pick up remote
+      // changes (e.g., a pre-batcher on another tablet stamped Start).
+      // Cheap operation — just rebuilds DOM from current in-memory state.
+      try {
+        if(typeof renderSched === 'function') renderSched();
+        if(typeof renderBadges === 'function') renderBadges();
+      } catch(e){}
     }
   } catch(e){}
 }
@@ -1056,5 +1146,6 @@ applyOverridesToSTD();
 })();
 
 </script>
+<script src="hoc_events.js"></script>
 </body>
 </html>

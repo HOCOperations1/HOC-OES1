@@ -285,6 +285,25 @@ function saveTankState(s){
     shared.__tanks = {state: s, ts: new Date().toISOString()};
     localStorage.setItem('hoc_sync_v1', JSON.stringify(shared));
   } catch(e){}
+  // Push to Supabase sync_bus so other tablets pick up tank changes.
+  // hoc_sync_bus is the single row that all dashboards poll for cross-device sync.
+  // Merge-write: pull current payload, merge our __tanks key, write back.
+  try {
+    fetch(SB_URL + '/rest/v1/hoc_sync_bus?id=eq.1&select=payload', {
+      headers: {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    })
+    .then(function(r){ return r.ok ? r.json() : []; })
+    .then(function(rows){
+      var existing = (rows[0] && rows[0].payload) || {};
+      existing.__tanks = {state: s, ts: new Date().toISOString()};
+      return fetch(SB_URL + '/rest/v1/hoc_sync_bus?id=eq.1', {
+        method:'PATCH',
+        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body: JSON.stringify({updated_at:new Date().toISOString(), payload:existing})
+      });
+    })
+    .catch(function(){});
+  } catch(e){}
 }
 function loadTankConfig(){
   try { return JSON.parse(localStorage.getItem(TANK_CONFIG_KEY) || '{}'); }
@@ -826,8 +845,46 @@ function P(p){
 loadAll();
 setInterval(loadAll, 15000);
 
+// ── CROSS-DEVICE TANK SYNC ──────────────────────────────────────────
+// Poll hoc_sync_bus for tank state updates from other tablets. If another
+// compound manager updates a tank on her tablet, this tablet picks it up
+// within ~15 seconds.
+let _tankLastSyncAt = null;
+async function pollTanksFromSync(){
+  try {
+    const r = await fetch(SB_URL + '/rest/v1/hoc_sync_bus?id=eq.1&select=updated_at,payload', {
+      headers: {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    });
+    if(!r.ok) return;
+    const rows = await r.json();
+    if(!rows.length) return;
+    const row = rows[0];
+    if(_tankLastSyncAt && row.updated_at <= _tankLastSyncAt) return;
+    _tankLastSyncAt = row.updated_at;
+    const payload = row.payload || {};
+    if(!payload.__tanks || !payload.__tanks.state) return;
+    // Don't overwrite if our local state is newer
+    const localTs = (loadTankState().__ts || 0);
+    const remoteTs = new Date(payload.__tanks.ts || 0).getTime();
+    if(remoteTs > localTs){
+      // Merge remote state into local
+      const remoteState = payload.__tanks.state;
+      try {
+        localStorage.setItem(TANK_STORAGE_KEY, JSON.stringify(remoteState));
+        // Re-render so the change is visible
+        if(typeof renderTanks === 'function') renderTanks();
+        if(typeof renderAll === 'function') renderAll();
+        if(typeof loadAll === 'function') loadAll();
+      } catch(e){}
+    }
+  } catch(e){}
+}
+pollTanksFromSync();
+setInterval(pollTanksFromSync, 15000);
+
 // Help button
 document.body.insertAdjacentHTML('beforeend',
   '<button onclick="window.location.href=\'HOC_Onboarding.html\'" title="Onboarding & operations guide" style="position:fixed;bottom:24px;right:24px;width:44px;height:44px;border-radius:50%;background:#14B8A6;color:white;border:none;font-size:20px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(20,184,166,.4);z-index:998">?</button>');
 </script>
+<script src="hoc_events.js"></script>
 </body></html>

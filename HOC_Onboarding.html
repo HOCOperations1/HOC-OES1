@@ -238,6 +238,11 @@ strong{color:var(--text);font-weight:600}
       <div class="rt">Tank Assignment</div>
       <div class="rd">Tank Board · batch-to-tank · CIP status · capacity</div>
     </div>
+    <div class="role-card amber" onclick="go('role-prodcoord')">
+      <div class="rl">📋 PROD COORDINATOR</div>
+      <div class="rt">Production Coordinator</div>
+      <div class="rd">Component check · staging placards · alerts</div>
+    </div>
     <div class="role-card pink" onclick="go('role-sales')">
       <div class="rl">💼 SALES</div>
       <div class="rt">Sales / Account Mgmt</div>
@@ -575,11 +580,58 @@ strong{color:var(--text);font-weight:600}
     </div>
     <div class="quick-card" onclick="window.location.href='HOC_Compound_Scheduler_v3.html'">
       <div class="qct">By Line view</div>
-      <div class="qcd">See what each fill line needs, in date order</div>
+      <div class="qcd">See what each fill line needs, in date order — now with <strong>PB Status column</strong></div>
     </div>
     <div class="quick-card" onclick="window.location.href='HOC_Compound_Scheduler_v3.html'">
-      <div class="qct">Forecast Hrs</div>
-      <div class="qcd">How many labor hours of compound work are pending</div>
+      <div class="qct">Cycle Time Intelligence <span style="font-size:8px;font-weight:700;color:#3B82F6;background:rgba(59,130,246,.2);padding:1px 5px;border-radius:5px;margin-left:3px">NEW</span></div>
+      <div class="qcd">Override tracker cycle times with actual averages from 162 batch sheets</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>New: Pre-Batch Status column in Schedule by Line</strong>
+    Each batch row in the Schedule by Line tab now shows a PB Status pill (PW Complete · PW In Progress · Queued · Assigned: [name] · or —). The pill updates live from PreWeigh Scheduler — when a pre-batcher stamps Start, you see "PW In Progress" within ~30 seconds.
+  </div>
+
+  <div class="callout">
+    <strong>New: Smart Tank dropdown</strong>
+    The Tank field on each batch's detail panel is now a dropdown showing all 14 tanks with capacity, status, and ⚠ warning if the tank is too small for the batch's lbs. Tanks that fit the batch sort first. Status pulled live from Compound Tank Board.
+  </div>
+
+  <div class="callout">
+    <strong>New: Cycle Time Intelligence tab</strong>
+    Built from 162 handwritten compound batch sheets. Shows 10 formulas where tracker cycle time differs from actuals (e.g. F.560 Therapy JBCO: tracker says 5h, actual avg is 2h). Click "Apply" per formula or "Apply All" to use real data in planning math. Formula Standards tab shows a blue "✓ from data" badge next to overridden cycle times.
+  </div>
+
+  <div class="h2">Pre-Weigh / Staging team (uses PreWeigh Scheduler)</div>
+  <p>Pre-batchers (Eli Coley, Robert Peoples) use <a href="HOC_PreWeigh_Scheduler.html">PreWeigh Scheduler</a> to track raw material pulls.</p>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Open the batch from your queue</div>
+      <div class="step-desc">PreWeigh Scheduler shows batches that need pre-weighing. Click one to open the detail panel.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Stamp Start when you begin pulling materials <span style="font-size:9px;font-weight:700;color:#3B82F6;background:rgba(59,130,246,.15);padding:2px 6px;border-radius:6px;margin-left:4px">NEW</span></div>
+      <div class="step-desc">Click "⏱ Stamp Start" — captures the exact minute. Pull all the raw materials per the BOM.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Stamp Complete when staging is done</div>
+      <div class="step-desc">Click "Stamp Complete" — the system calculates actual pull duration in hours, color-coded vs the formula standard (green within 0.5h, amber within 1.5h, red if over). This data feeds future pull-time analytics.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <div class="step-title">Log shortages if you run out of a material</div>
+      <div class="step-desc">Use the Short Item / Short Qty fields. Save. Compound Coordinator and Procurement see the shortage automatically.</div>
     </div>
   </div>
 
@@ -840,6 +892,74 @@ strong{color:var(--text);font-weight:600}
     <tr><td>Auto-suggest best tank for a batch</td><td>Future feature — current version is manual picker only</td></tr>
     <tr><td>Real-time tank temperature / pressure</td><td>Read from physical tank gauges — HOC OES doesn't have IOT yet</td></tr>
     <tr><td>Cross-shift handoff notes</td><td>Use the per-tank "Notes" field in the update modal</td></tr>
+  </table>
+</div>
+
+<!-- ════════════════════ ROLE: PRODUCTION COORDINATOR ════════════════════ -->
+<div id="sec-role-prodcoord" class="section">
+  <div class="h1">📋 Production Coordinator Guide</div>
+  <div class="h1-sub">Your job is making sure each scheduled batch has every component (caps, jars, labels, shippers) ready before the line needs them, and that materials get staged correctly. Your primary dashboard is <a href="HOC_Production_Coordinator.html">Production Coordinator</a>.</div>
+
+  <div class="callout">
+    <strong>What this dashboard does for you</strong>
+    Five workspaces: Command Center (open batches at a glance), Component Check (verify components for each batch), Inventory (live QOH for caps/jars/labels/shippers), Alerts &amp; Escalations (multi-component shortage logging), and <strong>Staging Placard</strong> (new — generate printable LG-010-00 placards for material handlers).
+  </div>
+
+  <div class="h2">Your daily routine</div>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Open Production Coordinator</div>
+      <div class="step-desc">From index hub → amber "Production Coordinator" card. Or direct URL: <code>HOC_Production_Coordinator.html</code>.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Run Component Check on today's batches</div>
+      <div class="step-desc">Click "Component Check" tab. For each batch starting today/tomorrow, verify: caps · jars · labels · shippers · inner packs all have sufficient QOH. Mark ✓ if clear or log shortage if not.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Log multi-component shortages (if any)</div>
+      <div class="step-desc">Click "Alerts &amp; Escalations" tab. Use the multi-shortage entry to add multiple low components for a single batch — select from dropdown of low-inventory items, enter qty needed, click + Add. Notifies procurement &amp; planning automatically.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <div class="step-title">Generate Staging Placard for material handlers <span style="font-size:9px;font-weight:700;color:#3B82F6;background:rgba(59,130,246,.15);padding:2px 6px;border-radius:6px;margin-left:4px">NEW</span></div>
+      <div class="step-desc">Click "Staging Placard" tab. Select a batch from the dropdown → click "Generate Placard". A printable LG-010-00 form pre-fills with Item Number, Batch Number, Line Number from the batch. Add up to 10 components: type/select SKU (autocompletes from warehouse inventory), enter Qty Needed, enter Pick Location (system suggests locations from past placards for this SKU). Click "🖨 Print Placard" — only the placard prints, not the rest of the dashboard. Material Handler then uses the FASCOR scan gun process to pull each item, signs off, hands placard back to Line Operator.</div>
+    </div>
+  </div>
+
+  <div class="h2">About the Staging Placard</div>
+
+  <div class="callout">
+    <strong>Built from LG-010-00 Logistic Lines Staging Process SOP (issued Jan 21, 2026)</strong>
+    The paper placard you used to fill in by hand is now generated. Material Handler runs the FASCOR scan gun process: Moveable Units → Inquiry Move → Date Inquiry → Scan SKU → Loc-to-Loc to line (e.g. IPRD010001). Both Material Handler and Operator initial each line; Supervisor initials when item count exceeds 3 pallets of jars/bottles or 20,000 labels.
+  </div>
+
+  <div class="h2">Tips</div>
+
+  <table class="tip-table">
+    <tr><td><strong>Pick locations get smarter over time</strong></td><td>First time you generate a placard for a SKU, type the location manually. Next time the same SKU appears, the system suggests it. After a few weeks, almost every SKU autocompletes.</td></tr>
+    <tr><td><strong>Print only the placard</strong></td><td>The print CSS hides nav, header, and all dashboard chrome — only the placard form prints. Works in Edge, Chrome, Safari.</td></tr>
+    <tr><td><strong>Up to 10 items per placard</strong></td><td>Per SOP. If a batch needs more than 10 components, generate a second placard.</td></tr>
+    <tr><td><strong>Audit trail</strong></td><td>Every printed placard is saved to localStorage (last 100). To pull history, ask Claude to query <code>hoc_placards_v1</code>.</td></tr>
+  </table>
+
+  <div class="h2">What this dashboard does NOT do (yet)</div>
+  <table class="tip-table">
+    <tr><td>Auto-populate components from BOM</td><td>You enter the SKU + qty manually. BOM auto-fill is future work.</td></tr>
+    <tr><td>Track placard completion / sign-off digitally</td><td>Signatures still happen on the printed paper. Digital signature capture is future work.</td></tr>
+    <tr><td>FASCOR scan-gun integration</td><td>Material handler still uses the scan gun manually per LG-010-00. We don't have a FASCOR API yet.</td></tr>
   </table>
 </div>
 

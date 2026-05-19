@@ -404,6 +404,15 @@ if(localStorage.getItem('hoc_oes_version') !== HOC_OES_VERSION){
       <span style="font-size:8px;font-weight:700;padding:2px 6px;border-radius:8px;background:#F59E0B22;color:#F59E0B;border:1px solid #F59E0B44">Step 8</span>
       <div class="tc-arrow">›</div>
     </a>
+<a href="HOC_Inventory.html" class="tool-card" style="border-color:#22D3EE22;text-decoration:none;border-width:2px" onmouseover="this.style.borderColor='#22D3EE88'" onmouseout="this.style.borderColor='#22D3EE22'">
+      <div class="tc-logo" style="background:#22D3EE22;color:#22D3EE;border:1px solid #22D3EE44">INV</div>
+      <div class="tc-body">
+        <div class="tc-name" style="color:#22D3EE">Inventory</div>
+        <div class="tc-desc">Tank Farm · MU Browser · Receive PO · FIFO Picker · Trace</div>
+      </div>
+      <span style="font-size:8px;font-weight:700;padding:2px 6px;border-radius:8px;background:#22D3EE22;color:#22D3EE;border:1px solid #22D3EE44">NEW</span>
+      <div class="tc-arrow">›</div>
+    </a>
   </div>
 
   <!-- MANAGEMENT TOOLS -->
@@ -911,6 +920,11 @@ setInterval(function(){
 }, 30000);
 </script>
 
+
+<!-- ══ POWER BI CARDS — HIDDEN FOR JUNE 1 LAUNCH ══
+     Re-enable later by changing display:none to display:block.
+     Per ops: cards stay in source but stay hidden until ready. -->
+<div id="power-bi-section" style="display:none">
   <!-- ══ POWER BI LIVE REPORTS ══════════════════════════════════════ -->
   <div style="background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.15);border-radius:12px;padding:14px 16px;margin-bottom:16px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
@@ -1164,6 +1178,8 @@ setInterval(function(){
 
 
 
+</div>
+<!-- ══ END POWER BI HIDDEN BLOCK ══ -->
 <script>
 // Quick Start guide — auto-shows on first visit, persists choice
 function openQuickStart(){

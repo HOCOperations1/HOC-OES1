@@ -573,23 +573,80 @@ function checkSupabase(){
       updateSummary();
     });
 
-  // hoc_events table
+  // hoc_events table — enhanced probe captures HTTP status code so we can
+  // tell 503 (Service Unavailable / RLS-blocked) from 401 (no auth) from
+  // 404 (table missing) from 200 (working).
   fetch(SUPA_URL+'/rest/v1/hoc_events?select=id,event_type,created_at&order=created_at.desc&limit=5', {headers: H()})
-    .then(function(r){ return r.ok ? r.json() : []; })
-    .then(function(rows){
-      if(rows.length){
-        var latest = new Date(rows[0].created_at).toLocaleString('en-US',{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'});
-        row('supa','hoc_events table','green',
-            'Latest event: ' + rows[0].event_type + ' at ' + latest,
-            rows.length + '+ events');
+    .then(function(r){
+      // Capture status + body for diagnosis
+      return r.text().then(function(body){ return {status:r.status, ok:r.ok, body:body}; });
+    })
+    .then(function(resp){
+      if(resp.ok){
+        try {
+          var rows = JSON.parse(resp.body);
+          if(rows.length){
+            var latest = new Date(rows[0].created_at).toLocaleString('en-US',{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'});
+            row('supa','hoc_events read','green',
+                'HTTP 200 · Latest: ' + rows[0].event_type + ' at ' + latest,
+                rows.length + '+ events');
+          } else {
+            row('supa','hoc_events read','grey','HTTP 200 · table empty, no events yet','empty');
+          }
+        } catch(parseErr){
+          row('supa','hoc_events read','amber','HTTP 200 but JSON parse failed: '+parseErr.message,'parse');
+        }
+      } else if(resp.status === 503){
+        row('supa','hoc_events read','red',
+            'HTTP 503 · service unavailable or RLS blocking · body: '+resp.body.slice(0,180),
+            'rls/503');
+      } else if(resp.status === 401 || resp.status === 403){
+        row('supa','hoc_events read','red',
+            'HTTP '+resp.status+' · auth/permission issue · body: '+resp.body.slice(0,180),
+            'auth');
+      } else if(resp.status === 404){
+        row('supa','hoc_events read','red','HTTP 404 · table missing','missing');
       } else {
-        row('supa','hoc_events table','grey','No events fired yet','empty');
+        row('supa','hoc_events read','red',
+            'HTTP '+resp.status+' · body: '+resp.body.slice(0,180),
+            'http-'+resp.status);
       }
-      renderSection('supa','supa');
-      updateSummary();
+
+      // Write-probe: try to insert a diagnostic event so we can see
+      // if the issue is read-only RLS or both. Tagged 'diagnostic-probe'
+      // so it's easy to clean up.
+      fetch(SUPA_URL+'/rest/v1/hoc_events', {
+        method:'POST',
+        headers: Object.assign({}, H(), {'Content-Type':'application/json','Prefer':'return=minimal'}),
+        body: JSON.stringify({
+          event_type:'diagnostic-probe',
+          payload:{src:'HOC_System_Diagnostics', ts:new Date().toISOString()}
+        })
+      })
+      .then(function(r){
+        return r.text().then(function(body){ return {status:r.status, ok:r.ok, body:body}; });
+      })
+      .then(function(wr){
+        if(wr.ok || wr.status === 201 || wr.status === 204){
+          row('supa','hoc_events write','green','HTTP '+wr.status+' · insert allowed','write-ok');
+        } else if(wr.status === 503){
+          row('supa','hoc_events write','red','HTTP 503 · '+wr.body.slice(0,180),'write-503');
+        } else if(wr.status === 401 || wr.status === 403){
+          row('supa','hoc_events write','red','HTTP '+wr.status+' · RLS likely blocks INSERT for anon · '+wr.body.slice(0,140),'write-rls');
+        } else {
+          row('supa','hoc_events write','red','HTTP '+wr.status+' · '+wr.body.slice(0,180),'write-fail');
+        }
+        renderSection('supa','supa');
+        updateSummary();
+      })
+      .catch(function(e){
+        row('supa','hoc_events write','red','Write probe error: '+e.message,'error');
+        renderSection('supa','supa');
+        updateSummary();
+      });
     })
     .catch(function(e){
-      row('supa','hoc_events table','red','Fetch failed: ' + e.message,'error');
+      row('supa','hoc_events read','red','Fetch failed: ' + e.message,'error');
       renderSection('supa','supa');
       updateSummary();
     });
@@ -647,6 +704,69 @@ function checkSync(){
   } catch(e){
     row('sync','User Role','grey','—','—');
   }
+
+  // ── CROSS-DEVICE SYNC ROUND-TRIP TEST ───────────────────────────
+  // Writes a unique payload to hoc_sync_bus (id=1, payload jsonb upsert),
+  // then immediately reads it back and confirms the test marker matches.
+  // Real 2-tablet test requires running this on tablet A, then loading the
+  // dashboard on tablet B and confirming tablet B's view reflects the change.
+  // This single-device probe validates the network round-trip works at all.
+  var testMarker = 'rt-' + Math.random().toString(36).slice(2,10) + '-' + Date.now();
+  var testPayload = { _diagnostic_probe: testMarker, ts: new Date().toISOString() };
+
+  fetch(SUPA_URL+'/rest/v1/hoc_sync_bus?id=eq.1', {
+    method: 'PATCH',
+    headers: Object.assign({}, H(), {'Content-Type':'application/json','Prefer':'return=minimal'}),
+    body: JSON.stringify({ updated_at: new Date().toISOString(), payload: testPayload })
+  })
+  .then(function(wr){
+    return wr.text().then(function(body){ return {status:wr.status, ok:wr.ok, body:body}; });
+  })
+  .then(function(wr){
+    if(!wr.ok && wr.status !== 204){
+      // PATCH failed — try INSERT in case row doesn't exist
+      if(wr.status === 404 || wr.status === 406){
+        return fetch(SUPA_URL+'/rest/v1/hoc_sync_bus', {
+          method:'POST',
+          headers: Object.assign({}, H(), {'Content-Type':'application/json','Prefer':'return=minimal,resolution=merge-duplicates'}),
+          body: JSON.stringify({ id:1, updated_at: new Date().toISOString(), payload: testPayload })
+        }).then(function(r){ return r.text().then(function(b){ return {status:r.status, ok:r.ok, body:b}; }); });
+      }
+      throw new Error('Write failed HTTP '+wr.status+': '+wr.body.slice(0,120));
+    }
+    return wr;
+  })
+  .then(function(wr){
+    // Now read back
+    return fetch(SUPA_URL+'/rest/v1/hoc_sync_bus?id=eq.1&select=updated_at,payload', {headers: H()})
+      .then(function(r){ return r.json(); })
+      .then(function(rows){
+        if(!rows || !rows.length){
+          row('sync','Cross-device round-trip','red','Wrote but read returned no row','no-row');
+          return;
+        }
+        var p = rows[0].payload;
+        if(p && p._diagnostic_probe === testMarker){
+          var lag = Math.round(Date.now() - new Date(p.ts).getTime());
+          row('sync','Cross-device round-trip','green',
+              'Wrote & read-back OK · '+lag+'ms · marker='+testMarker.slice(0,12),
+              lag+'ms');
+        } else {
+          // Read returned a different (older) value — possible the write didn't land
+          var pTs = p && p.ts ? new Date(p.ts).toLocaleTimeString() : 'unknown';
+          row('sync','Cross-device round-trip','amber',
+              'Read returned a DIFFERENT payload (ts: '+pTs+'). Either write didn\'t commit or another device wrote simultaneously.',
+              'stale');
+        }
+      });
+  })
+  .catch(function(e){
+    row('sync','Cross-device round-trip','red','Probe error: '+e.message,'error');
+  })
+  .finally(function(){
+    renderSection('sync','sync');
+    updateSummary();
+  });
 
   renderSection('sync','sync');
   updateSummary();
