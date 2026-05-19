@@ -182,13 +182,16 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
     <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
       <button class="nb" id="paste-target-pt"  data-target="pt" style="background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.25);padding:5px 10px;border-radius:6px">📊 Production Schedule</button>
       <button class="nb" id="paste-target-pd"  data-target="pd" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border)">🏭 Planning Data (Vicinity)</button>
+      <button class="nb" id="paste-target-att" data-target="att" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border)">📈 Case Attainment</button>
       <button class="nb" id="paste-target-auto" data-target="auto" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border)">🤖 Auto-detect</button>
     </div>
     <textarea id="paste-box" placeholder="In Excel: Ctrl+A to select all on the current month tab, Ctrl+C to copy, then click here and Ctrl+V to paste.
 
 The parser will skip the KPI rollup at the top and find the batch table automatically.
 
-For Planning Data, paste from the 'Vicinity Interface' sheet — same idea, header row anywhere in the paste is fine." style="width:100%;min-height:120px;padding:10px;font-family:ui-monospace,monospace;font-size:10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);resize:vertical;line-height:1.4"></textarea>
+For Planning Data, paste from the 'Vicinity Interface' sheet — same idea, header row anywhere in the paste is fine.
+
+For Case Attainment, paste the entire MFG Plant attainment sheet — parser finds Plant total + per-line blocks + monthly trend automatically." style="width:100%;min-height:120px;padding:10px;font-family:ui-monospace,monospace;font-size:10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);resize:vertical;line-height:1.4"></textarea>
     <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
       <button class="nb" onclick="parsePaste()" style="background:var(--blue);color:#fff;padding:6px 14px;border-radius:6px;border:none;font-weight:700;font-size:10px">✓ Load Pasted Data</button>
       <button class="nb" onclick="document.getElementById('paste-box').value=''" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);font-size:10px">Clear</button>
@@ -487,7 +490,7 @@ var PASTE_TARGET = 'pt';
 
 function setPasteTarget(t){
   PASTE_TARGET = t;
-  ['pt','pd','auto'].forEach(function(k){
+  ['pt','pd','att','auto'].forEach(function(k){
     var b = document.getElementById('paste-target-'+k);
     if(!b) return;
     if(k===t){
@@ -504,7 +507,7 @@ function setPasteTarget(t){
 
 // Wire the picker buttons (after DOM is ready)
 document.addEventListener('DOMContentLoaded', function(){
-  ['pt','pd','auto'].forEach(function(k){
+  ['pt','pd','att','auto'].forEach(function(k){
     var b = document.getElementById('paste-target-'+k);
     if(b) b.addEventListener('click', function(){ setPasteTarget(k); });
   });
@@ -576,6 +579,9 @@ function parsePaste(){
     var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     var d = new Date();
     sheetName = monthNames[d.getMonth()] + ' ' + d.getFullYear();
+  } else if(target === 'att'){
+    // Attainment data is parsed inline — different path entirely
+    return parseAttainmentPaste(rows, statusEl);
   } else {
     sheetName = 'Vicinity Interface';
   }
@@ -606,6 +612,277 @@ function parsePaste(){
     statusEl.style.color = 'var(--red)';
     statusEl.textContent = '✗ Parse failed: ' + err.message;
     log('err', 'Paste parse: ' + err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ATTAINMENT PARSER
+// Handles the pasted "Case Attainment to Plan %" sheet.
+// Extracts:
+//   - Plant total (Net Req, Cumulative Actual, Wk1-5 plan/actual)
+//   - Per-line blocks (Line 1, 2, 3, 4, 5, 7, 11 + any others detected)
+//   - Monthly trend (2026 row + historical years)
+//   - Monthly goal % per row
+// Stores to localStorage.hoc_attainment_v1 and pushes to Supabase hoc_sync_bus.
+// Index reads this BEFORE falling back to batch-summed math.
+// ═══════════════════════════════════════════════════════════════════════
+function parseAttainmentPaste(rows, statusEl){
+  try {
+    // Helpers
+    var toNum = function(v){
+      if(v == null || v === '') return null;
+      var s = String(v).replace(/,/g,'').replace(/%/g,'').replace(/\$/g,'').trim();
+      if(s === '' || s === '-' || s === '—') return null;
+      var n = parseFloat(s);
+      return isNaN(n) ? null : n;
+    };
+    var isHeaderRow = function(r){
+      // A header row contains "Plan", "Actual", "Net Req" etc
+      var joined = r.map(function(c){ return String(c||''); }).join('|').toLowerCase();
+      return joined.indexOf('plan') >= 0 && joined.indexOf('actual') >= 0 && joined.indexOf('net req') >= 0;
+    };
+    var isWeekRow = function(r){
+      // Row that starts (after skipping empty cells) with "Wk N"
+      for(var i = 0; i < r.length; i++){
+        var v = String(r[i]||'').trim();
+        if(v) return /^wk\s*\d+/i.test(v);
+      }
+      return false;
+    };
+    var blockLabelInRow = function(r){
+      // Returns "Plant" or "Line N" if this row labels a block start
+      var joined = r.map(function(c){ return String(c||''); }).join(' ').toLowerCase();
+      if(joined.indexOf('house of cheatham') >= 0 || joined.indexOf('mfg plant') >= 0) return 'Plant';
+      var m = joined.match(/line\s+(\d+)/);
+      if(m) return 'Line ' + m[1];
+      return null;
+    };
+
+    // Walk rows. Two-block layout: blocks are stacked vertically AND in some
+    // sheets side-by-side. We handle both by tracking ALL header rows and
+    // attributing subsequent week rows to the most recent label seen on or
+    // just above the header.
+    var blocks = {};       // {Plant: {wks:[], net_req, cum_actual}, "Line 1": {...}, ...}
+    var pendingLabels = []; // labels seen in the row(s) immediately above a header row
+
+    // Identify column ranges per header row — supports side-by-side blocks.
+    // Strategy: scan each header row, group columns by occurrence of "Plan"
+    // markers. A block header has the column sequence:
+    //   Plan(label) Plan(value) Actual Cumulative_Plan Cumulative_Actual Net_Req
+    //   Attainment_Cumulative Attainment_Week Goal
+    var locateBlocksInHeader = function(headerRow){
+      var blockStarts = [];
+      for(var i = 0; i < headerRow.length; i++){
+        var v = String(headerRow[i]||'').trim().toLowerCase();
+        if(v === 'plan' && i+1 < headerRow.length){
+          var next = String(headerRow[i+1]||'').trim().toLowerCase();
+          if(next === 'plan'){
+            blockStarts.push(i); // this is the start of a block
+          }
+        }
+      }
+      return blockStarts;
+    };
+
+    var currentBlockMap = null;  // {col_start: blockLabel} for the most recent header
+    for(var r = 0; r < rows.length; r++){
+      var row = rows[r];
+
+      // Detect label-bearing rows (e.g. "House of Cheatham MFG Plant", "Line 1")
+      var label = blockLabelInRow(row);
+      if(label){
+        pendingLabels.push({label:label, row:r});
+        // Also check the FULL row for multiple line labels (side-by-side blocks)
+        // by scanning each cell for "Line N" individually
+        var cellByCell = [];
+        for(var ci = 0; ci < row.length; ci++){
+          var cv = String(row[ci]||'').trim();
+          if(/^Line\s+\d+$/i.test(cv)){
+            cellByCell.push({label: cv.replace(/\s+/g,' ').replace(/^line/i,'Line'), col: ci});
+          } else if(/house of cheatham/i.test(cv)){
+            cellByCell.push({label:'Plant', col: ci});
+          }
+        }
+        if(cellByCell.length > 1){
+          // Multi-label row — replace pending with these positioned labels
+          pendingLabels = cellByCell.map(function(x){
+            return {label: x.label, row: r, col: x.col};
+          });
+        }
+        continue;
+      }
+
+      // Header row: capture block start columns + assign labels by position
+      if(isHeaderRow(row)){
+        currentHeaderStarts = locateBlocksInHeader(row);
+        currentBlockMap = {};
+        // Snap pending labels to header start columns by left-to-right or column proximity
+        var labelsHere = pendingLabels.filter(function(p){ return r - p.row <= 3; });
+        // Sort labels by column (if column known) or by row order
+        labelsHere.sort(function(a,b){
+          if(a.col != null && b.col != null) return a.col - b.col;
+          return a.row - b.row;
+        });
+        // Map labels to header start columns: nearest-column match
+        for(var b = 0; b < currentHeaderStarts.length; b++){
+          var startCol = currentHeaderStarts[b];
+          // Find the pending label whose col is closest to (and <=) this start col
+          var bestLabel = null;
+          var bestDist = Infinity;
+          for(var li = 0; li < labelsHere.length; li++){
+            var pl = labelsHere[li];
+            if(pl.col == null){
+              // No column info — fall back to ordering
+              if(li === b){ bestLabel = pl.label; bestDist = 0; }
+            } else {
+              var dist = Math.abs(pl.col - startCol);
+              if(dist < bestDist){ bestDist = dist; bestLabel = pl.label; }
+            }
+          }
+          var lbl = bestLabel || ('Block ' + (b+1));
+          currentBlockMap[startCol] = lbl;
+          if(!blocks[lbl]) blocks[lbl] = {wks:[]};
+        }
+        pendingLabels = [];
+        continue;
+      }
+
+      // Week data row: pull values from each block's column range
+      if(isWeekRow(row) && currentHeaderStarts && currentBlockMap){
+        for(var b = 0; b < currentHeaderStarts.length; b++){
+          var start = currentHeaderStarts[b];
+          var lblForCol = currentBlockMap[start];
+          if(!lblForCol) continue;
+          // Columns relative to start:
+          //   0: "Wk N" label, 1: Plan, 2: Actual, 3: Cum Plan,
+          //   4: Cum Actual, 5: Net Req, 6: Attain-Cum%, 7: Attain-Wk%, 8: Goal%
+          var wkLabel = String(row[start] || '').trim();
+          var plan    = toNum(row[start+1]);
+          var actual  = toNum(row[start+2]);
+          var cumPlan = toNum(row[start+3]);
+          var cumAct  = toNum(row[start+4]);
+          var netReq  = toNum(row[start+5]);
+          var attCum  = toNum(row[start+6]);
+          var attWk   = toNum(row[start+7]);
+          var goal    = toNum(row[start+8]);
+          if(plan == null && actual == null && cumAct == null) continue;
+          blocks[lblForCol].wks.push({
+            week: wkLabel,
+            plan: plan, actual: actual,
+            cum_plan: cumPlan, cum_actual: cumAct,
+            net_req: netReq,
+            attainment_cum_pct: attCum,
+            attainment_week_pct: attWk,
+            goal_pct: goal
+          });
+          if(netReq != null) blocks[lblForCol].net_req = netReq;
+          if(cumAct != null) blocks[lblForCol].cum_actual = cumAct;
+          if(cumPlan != null) blocks[lblForCol].cum_plan = cumPlan;
+        }
+      }
+    }
+
+    // Extract monthly trend table (Year + 12 month columns)
+    // Look for a row starting with "Year" or for year rows (2024, 2025, 2026)
+    var monthlyTrend = {};
+    for(var r2 = 0; r2 < rows.length; r2++){
+      var row2 = rows[r2];
+      // Find first non-empty cell
+      var firstNonEmpty = null;
+      for(var j = 0; j < row2.length; j++){
+        var v = String(row2[j]||'').trim();
+        if(v){ firstNonEmpty = {val:v, idx:j}; break; }
+      }
+      if(!firstNonEmpty) continue;
+      // Year row: numeric 4-digit starting 19/20
+      var yrMatch = firstNonEmpty.val.match(/^(20\d{2})$/);
+      if(yrMatch){
+        var yr = yrMatch[1];
+        var months = [];
+        // Pull next 12 cells as monthly attainment %
+        for(var k = 1; k <= 12; k++){
+          months.push(toNum(row2[firstNonEmpty.idx + k]));
+        }
+        monthlyTrend[yr] = months;
+      }
+      // Also catch "Jan-26" style rows (vertical orientation)
+      var monMatch = firstNonEmpty.val.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2})$/i);
+      if(monMatch){
+        var mAbbr = monMatch[1];
+        var yr2 = '20' + monMatch[2];
+        var mIdx = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(mAbbr.toLowerCase());
+        // Value in next cell after Jan-26 = attainment, then = goal
+        var attainVal = toNum(row2[firstNonEmpty.idx + 1]);
+        var goalVal   = toNum(row2[firstNonEmpty.idx + 2]);
+        if(!monthlyTrend[yr2]) monthlyTrend[yr2] = new Array(12).fill(null);
+        if(attainVal != null) monthlyTrend[yr2][mIdx] = attainVal;
+        // Also store the goal in a sibling key
+        if(goalVal != null){
+          if(!monthlyTrend[yr2+'_goal']) monthlyTrend[yr2+'_goal'] = new Array(12).fill(null);
+          monthlyTrend[yr2+'_goal'][mIdx] = goalVal;
+        }
+      }
+    }
+
+    // Validate we found at least one block
+    var blockCount = Object.keys(blocks).filter(function(k){ return blocks[k].wks.length > 0; }).length;
+    if(blockCount === 0){
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '✗ No attainment blocks found. Make sure you pasted the whole sheet including week rows.';
+      log('err', 'Attainment paste: no blocks parsed');
+      return;
+    }
+
+    // Persist
+    var d = new Date();
+    var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var attainment = {
+      _updated: new Date().toISOString(),
+      _month_label: monthNames[d.getMonth()] + ' ' + d.getFullYear(),
+      _month_index: d.getMonth(),
+      _year: d.getFullYear(),
+      plant: blocks['Plant'] || null,
+      lines: {},
+      monthly_trend: monthlyTrend
+    };
+    Object.keys(blocks).forEach(function(k){
+      if(k === 'Plant') return;
+      var match = k.match(/^Line\s+(\d+)$/);
+      if(match) attainment.lines[match[1]] = blocks[k];
+    });
+
+    localStorage.setItem('hoc_attainment_v1', JSON.stringify(attainment));
+
+    // Also push to shared sync bus so other tablets pick it up
+    try {
+      fetch('https://yemtpvrumqvbzrzpwnyy.supabase.co/rest/v1/hoc_sync_bus?id=eq.1&select=payload', {
+        headers: {'apikey':'sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl', Authorization:'Bearer sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl'}
+      })
+      .then(function(r){ return r.ok ? r.json() : []; })
+      .then(function(arr){
+        var payload = (arr[0] && arr[0].payload) || {};
+        payload.attainment = attainment;
+        return fetch('https://yemtpvrumqvbzrzpwnyy.supabase.co/rest/v1/hoc_sync_bus?id=eq.1', {
+          method:'PATCH',
+          headers:{'apikey':'sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl', Authorization:'Bearer sb_publishable_YrMf3_sGly4dir1cEGErfg_SSusnfJl', 'Content-Type':'application/json', 'Prefer':'return=minimal'},
+          body: JSON.stringify({updated_at: new Date().toISOString(), payload: payload})
+        });
+      })
+      .catch(function(){});
+    } catch(e){}
+
+    var plantSummary = '';
+    if(attainment.plant){
+      plantSummary = ' · Plant: ' + (attainment.plant.cum_actual||0).toLocaleString() + ' / ' + (attainment.plant.net_req||0).toLocaleString();
+    }
+    var lineCount = Object.keys(attainment.lines).length;
+    statusEl.style.color = 'var(--green)';
+    statusEl.textContent = '✓ Attainment loaded · ' + lineCount + ' lines' + plantSummary + '. All dashboards refresh automatically.';
+    log('info', 'Attainment paste: Plant + ' + lineCount + ' lines + ' + Object.keys(monthlyTrend).length + ' monthly trend years');
+  } catch(err){
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✗ Attainment parse failed: ' + err.message;
+    log('err', 'Attainment paste error: ' + err.message);
   }
 }
 // ═══════════════════════════════════════════════════════════════════

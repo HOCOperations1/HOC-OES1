@@ -723,39 +723,56 @@ function loadKPIs() {
     document.getElementById('kv-blocked').textContent = blocked;
     document.getElementById('kv-blocked').style.color = blocked > 0 ? 'var(--red)' : 'var(--green)';
 
-    // Cases: PREFER Goal Source Data (row 20) — the planner's official monthly rollup.
-    // SANITY CHECK: reject tiny values (<1000) that suggest wrong file uploaded.
-    // Aligned with HOC_Production_Supervisor.html logic for consistency.
+    // Cases: PRIORITY ORDER for the May Cases / Case Balance / OEE KPIs:
+    //   1. hoc_attainment_v1 (pasted attainment sheet — most authoritative)
+    //   2. Goal Source Data row 20 from the production schedule upload (legacy)
+    //   3. Sum of COMPLETED batch actqty (last-resort fallback)
+    // Attainment paste gives Plant + per-line + monthly trend. We use Plant
+    // totals here. Per-line drill-down lives in the new Attainment card below.
     var cases = null;
     var goalCases = null;
     var caseSource = 'computed from batches';
 
-    var rawActual = goals.may_actual != null ? goals.may_actual
-                  : goals['Overall May Cases'] != null ? goals['Overall May Cases']
-                  : goals['May Cases'] != null ? goals['May Cases']
-                  : goals.cases_actual;
-    var rawGoal   = goals.may_goal != null ? goals.may_goal
-                  : goals['Case Goal'] != null ? goals['Case Goal']
-                  : goals['Overall May Cases Goal'] != null ? goals['Overall May Cases Goal']
-                  : goals.cases_goal;
+    // Source 1: pasted attainment data
+    var attainment = null;
+    try { attainment = JSON.parse(localStorage.getItem('hoc_attainment_v1') || 'null'); } catch(e){}
+    if(attainment && attainment.plant){
+      var plant = attainment.plant;
+      // Plant.cum_actual is the to-date cases. Plant.net_req is the month goal.
+      if(plant.cum_actual != null && plant.net_req != null){
+        cases = Number(plant.cum_actual);
+        goalCases = Number(plant.net_req);
+        caseSource = 'Attainment paste · ' + (attainment._month_label || 'current');
+      }
+    }
 
-    // Use Goal Source Data only if values are sane (≥1000)
-    if((Number(rawActual) >= 1000) || (Number(rawGoal) >= 1000)){
-      cases = Number(rawActual) || 0;
-      goalCases = Number(rawGoal) || 0;
-      caseSource = 'Goal Source Data';
-    } else {
-      // Fallback — sum from completed batches (deduped by batch number)
-      var seenBatches = {};
-      var sumCompleted = 0, sumPlanned = 0;
-      merged.forEach(function(b){
-        if(!b.batch || seenBatches[b.batch]) return;
-        seenBatches[b.batch] = 1;
-        sumPlanned += (Number(b.origqty) || 0);
-        if(b.status === 'COMPLETED') sumCompleted += (Number(b.actqty) || 0);
-      });
-      cases = sumCompleted;
-      goalCases = sumPlanned;
+    // Source 2: Goal Source Data — only if attainment paste didn't give us numbers
+    if(cases == null || goalCases == null){
+      var rawActual = goals.may_actual != null ? goals.may_actual
+                    : goals['Overall May Cases'] != null ? goals['Overall May Cases']
+                    : goals['May Cases'] != null ? goals['May Cases']
+                    : goals.cases_actual;
+      var rawGoal   = goals.may_goal != null ? goals.may_goal
+                    : goals['Case Goal'] != null ? goals['Case Goal']
+                    : goals['Overall May Cases Goal'] != null ? goals['Overall May Cases Goal']
+                    : goals.cases_goal;
+      if((Number(rawActual) >= 1000) || (Number(rawGoal) >= 1000)){
+        cases = Number(rawActual) || 0;
+        goalCases = Number(rawGoal) || 0;
+        caseSource = 'Goal Source Data';
+      } else {
+        // Source 3: fallback — sum from completed batches (deduped by batch number)
+        var seenBatches = {};
+        var sumCompleted = 0, sumPlanned = 0;
+        merged.forEach(function(b){
+          if(!b.batch || seenBatches[b.batch]) return;
+          seenBatches[b.batch] = 1;
+          sumPlanned += (Number(b.origqty) || 0);
+          if(b.status === 'COMPLETED') sumCompleted += (Number(b.actqty) || 0);
+        });
+        cases = sumCompleted;
+        goalCases = sumPlanned;
+      }
     }
     document.getElementById('kv-cases').textContent = N(cases);
 
