@@ -1,6 +1,6 @@
 // HOC-OES Service Worker — network-first for HTML so updates land immediately
 // Bump CACHE version any time you redeploy and want browsers to pick up changes.
-const CACHE = 'hoc-oes-v6.15-20260518';
+const CACHE = 'hoc-oes-v6.18-20260518';
 const SHELL = [
   './index.html',
   './manifest.json',

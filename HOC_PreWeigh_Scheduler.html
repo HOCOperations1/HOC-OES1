@@ -145,6 +145,24 @@ select:focus,input:focus{outline:none;border-color:var(--purple)}
         <button class="btn-save" onclick="saveUpdate()">Save</button>
         <span class="saved-note" id="saved-note">✓ Saved</span>
       </div>
+
+      <!-- ── PRE-WEIGH TIMESTAMPS ──────────────────────────────────────────────
+           Captures the actual minute pre-weigh starts and completes for THIS
+           batch. Used to measure real pull duration vs standard (PREBATCH_HRS)
+           — same kind of intelligence as the Compound Cycle Time Analysis we
+           built, but for the staging/pull step. Building this history is the
+           first step toward "Pre-Weigh Cycle Time Intelligence" later.
+      -->
+      <div class="su-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+        <span class="su-label" style="color:var(--purple);font-weight:700">⏱ Pull Timing</span>
+        <button class="btn-save" id="ts-start-btn"   onclick="stampPullTime('start')"   style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);color:var(--blue)">Stamp Start</button>
+        <span class="su-label">Started:</span>
+        <span id="ts-start-display"    style="font-size:10px;color:var(--text2);min-width:130px">—</span>
+        <button class="btn-save" id="ts-complete-btn" onclick="stampPullTime('complete')" style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);color:var(--green)">Stamp Complete</button>
+        <span class="su-label">Completed:</span>
+        <span id="ts-complete-display" style="font-size:10px;color:var(--text2);min-width:130px">—</span>
+        <span id="ts-duration" style="font-size:10px;font-weight:700;color:var(--purple);margin-left:8px">—</span>
+      </div>
     </div>
   </div>
 </div>
@@ -240,10 +258,14 @@ function syncToShared(batchId, pwData) {
     var d = JSON.parse(localStorage.getItem(HOC_SYNC_KEY) || '{}');
     if (!d[batchId]) d[batchId] = {};
     d[batchId].pw = {
-      pw_status: pwData.status || '',
-      tech1:     pwData.operator || '',
-      notes:     pwData.notes || '',
-      ts:        pwData.saved || new Date().toISOString()
+      pw_status:     pwData.status || '',
+      tech1:         pwData.operator || '',
+      notes:         pwData.notes || '',
+      // Pull timing — mirrored so Compound Scheduler PB Status column reads from here
+      pw_start_ts:   pwData.pull_start_ts || '',
+      pw_complete_ts:pwData.pull_complete_ts || '',
+      pw_duration_hr:pwData.pull_duration_hr || null,
+      ts:            pwData.saved || new Date().toISOString()
     };
     localStorage.setItem(HOC_SYNC_KEY, JSON.stringify(d));
   } catch(e) {}
@@ -508,14 +530,92 @@ function openDetail(main){
   document.getElementById('su-short-item').value=u.short_item||'';
   document.getElementById('su-short-qty').value=u.short_qty||'';
   document.getElementById('su-notes').value=u.notes||'';
+  // Render pull-time timestamps if previously stamped
+  renderPullTiming(u);
   document.getElementById('saved-note').classList.remove('show');
   document.getElementById('detail').classList.add('open');
   document.getElementById('detail').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function closeDetail(){document.getElementById('detail').classList.remove('open');currentBatch=null;}
 
+// ────────────────────────────────────────────────────────────────────────
+// PULL TIMING — captures wall-clock minutes for the actual pre-weigh pull
+// (start → complete). Stored under updates[batch].pull_start_ts / pull_complete_ts.
+// Also mirrored to shared sync so Compound Scheduler "PB Status" can read it.
+// ────────────────────────────────────────────────────────────────────────
+function stampPullTime(which){
+  if(!currentBatch){ alert('Open a batch first.'); return; }
+  var main = currentBatch.main;
+  if(!updates[main]) updates[main] = {};
+  var nowIso = new Date().toISOString();
+
+  if(which === 'start'){
+    if(updates[main].pull_start_ts){
+      if(!confirm('Start time already stamped at ' + new Date(updates[main].pull_start_ts).toLocaleString() + '. Overwrite?')) return;
+    }
+    updates[main].pull_start_ts = nowIso;
+    // Clear any prior complete if user is re-stamping
+    if(updates[main].pull_complete_ts && new Date(updates[main].pull_complete_ts) < new Date(nowIso)){
+      updates[main].pull_complete_ts = '';
+      updates[main].pull_duration_hr = null;
+    }
+  } else if(which === 'complete'){
+    if(!updates[main].pull_start_ts){
+      if(!confirm('No start time stamped. Stamp complete anyway? (Duration cannot be calculated.)')) return;
+    }
+    updates[main].pull_complete_ts = nowIso;
+    if(updates[main].pull_start_ts){
+      var ms = new Date(nowIso) - new Date(updates[main].pull_start_ts);
+      updates[main].pull_duration_hr = ms > 0 ? (ms / 3600000) : null;
+    }
+  }
+  updates[main].saved = nowIso;
+  try {
+    localStorage.setItem('hoc_pw_v1', JSON.stringify(updates));
+    syncToShared(main, updates[main]);
+  } catch(e){}
+  renderPullTiming(updates[main]);
+  renderQueue(); renderCompleted();
+}
+
+function renderPullTiming(u){
+  u = u || {};
+  var sEl = document.getElementById('ts-start-display');
+  var cEl = document.getElementById('ts-complete-display');
+  var dEl = document.getElementById('ts-duration');
+  if(!sEl || !cEl || !dEl) return;
+  function fmt(iso){
+    if(!iso) return '—';
+    try { return new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+    catch(e){ return '—'; }
+  }
+  sEl.textContent = fmt(u.pull_start_ts);
+  cEl.textContent = fmt(u.pull_complete_ts);
+  // Duration display + vs std
+  if(u.pull_duration_hr != null){
+    var dur = u.pull_duration_hr;
+    var stdHrs = (currentBatch && currentBatch.pb_hrs) || 0;
+    var diff = stdHrs ? (dur - stdHrs) : null;
+    var diffStr = '';
+    var color = 'var(--purple)';
+    if(diff != null){
+      var diffNum = diff.toFixed(2);
+      var sign = diff >= 0 ? '+' : '';
+      diffStr = ' (' + sign + diffNum + 'h vs ' + stdHrs + 'h std)';
+      color = Math.abs(diff) <= 0.5 ? 'var(--green)' : Math.abs(diff) <= 1.5 ? 'var(--amber)' : 'var(--red)';
+    }
+    dEl.textContent = 'Duration: ' + dur.toFixed(2) + 'h' + diffStr;
+    dEl.style.color = color;
+  } else {
+    dEl.textContent = '—';
+    dEl.style.color = 'var(--purple)';
+  }
+}
+
 function saveUpdate(){
   if(!currentBatch)return;
+  // Preserve existing pull timing fields — only update what's in the form
+  var prev = updates[currentBatch.main] || {};
   updates[currentBatch.main]={
     status:  document.getElementById('su-status').value,
     operator:document.getElementById('su-operator').value,
@@ -524,6 +624,9 @@ function saveUpdate(){
     short_item:document.getElementById('su-short-item').value,
     short_qty: document.getElementById('su-short-qty').value,
     notes:   document.getElementById('su-notes').value,
+    pull_start_ts: prev.pull_start_ts || '',
+    pull_complete_ts: prev.pull_complete_ts || '',
+    pull_duration_hr: prev.pull_duration_hr || null,
     saved:   new Date().toISOString(),
   };
   try{localStorage.setItem('hoc_pw_v1',JSON.stringify(updates));

@@ -132,6 +132,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--amber)}
     <button class="nb" onclick="P('check')">Component Check</button>
     <button class="nb" onclick="P('components')">Inventory</button>
     <button class="nb" onclick="P('alerts')">Alerts &amp; Escalations</button>
+    <button class="nb" onclick="P('placard')">Staging Placard</button>
     <button class="nb" onclick="P('sync')">Sync</button>
   </nav>
   <a href="index.html" style="display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--text2);text-decoration:none;font-size:9px;font-weight:700;flex-shrink:0;white-space:nowrap" title="Back to HOC-OES Menu">← HOC-OES</a>
@@ -313,6 +314,118 @@ select:focus,input:focus,textarea:focus{border-color:var(--amber)}
     <div style="margin-top:10px"><button class="btn-a" onclick="exportAllCSV()">⬇ Export CSV</button></div>
   </div>
 </div></div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     MATERIAL STAGING PLACARD — LG-010-00
+     Digital version of the paper placard from the Logistics Lines Staging SOP.
+     Pre-fills batch/item/line info from BATCHES, lets coordinator add up to 10
+     items with pick locations (auto-suggested from prior placards or FASCOR
+     scans). Print button → window.print() renders only the placard.
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="page" id="page-placard"><div class="content">
+  <div class="card no-print">
+    <div class="card-title">Generate Material Staging Placard</div>
+    <p style="font-size:11px;color:var(--text2);line-height:1.7;margin-bottom:10px">
+      Per <strong style="color:var(--text)">LG-010-00 Logistic Lines Staging Process</strong>. Select a batch, add the items needed for staging (Material Handler will use FASCOR scan-gun to find pick locations: Moveable Units → Inquiry Move → Date Inquiry → Scan SKU). Pick locations from prior placards are suggested automatically. Print the placard, then attach to the BOM.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;margin-bottom:10px">
+      <div>
+        <div style="font-size:9px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Select Batch</div>
+        <select id="placard-batch-sel" onchange="onPlacardBatchSelect()" style="width:100%;font:inherit;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:6px 8px">
+          <option value="">— select a batch —</option>
+        </select>
+      </div>
+      <button onclick="generatePlacard()" style="padding:8px 14px;background:var(--blue);border:none;border-radius:6px;color:#fff;font:inherit;font-size:11px;font-weight:700;cursor:pointer">Generate Placard</button>
+    </div>
+    <div id="placard-add-row" style="display:none">
+      <div style="font-size:9px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em">Add Item to Placard</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 100px 100px auto;gap:6px;align-items:end;margin-bottom:6px">
+        <div>
+          <div style="font-size:9px;color:var(--text3);margin-bottom:3px">Product Number / SKU</div>
+          <input type="text" id="placard-item-sku"  placeholder="e.g. 7-1056" list="placard-sku-list" style="width:100%;font:inherit;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px" oninput="onPlacardSkuInput()">
+          <datalist id="placard-sku-list"></datalist>
+        </div>
+        <div>
+          <div style="font-size:9px;color:var(--text3);margin-bottom:3px">Description (auto-fills)</div>
+          <input type="text" id="placard-item-desc" placeholder="Component description" style="width:100%;font:inherit;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px">
+        </div>
+        <div>
+          <div style="font-size:9px;color:var(--text3);margin-bottom:3px">Qty Needed</div>
+          <input type="number" id="placard-item-qty" placeholder="0" style="width:100%;font:inherit;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px">
+        </div>
+        <div>
+          <div style="font-size:9px;color:var(--text3);margin-bottom:3px">Pick Location</div>
+          <input type="text" id="placard-item-loc" placeholder="1090-11-001" list="placard-loc-list" style="width:100%;font:inherit;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px">
+          <datalist id="placard-loc-list"></datalist>
+        </div>
+        <button onclick="addPlacardItem()" style="padding:6px 12px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);border-radius:5px;color:#34D399;font:inherit;font-size:10px;font-weight:700;cursor:pointer">+ Add Item</button>
+      </div>
+      <div style="font-size:9px;color:var(--text3);font-style:italic">Up to 10 items. Pick location suggestions come from prior placards for this product. Manual entry OK.</div>
+    </div>
+  </div>
+
+  <!-- Live preview / printable placard -->
+  <div id="placard-preview-wrap" style="display:none">
+    <div class="card no-print" style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="font-size:11px;color:var(--text2)">
+          <strong style="color:var(--text)">Placard ready.</strong> Review below. Items: <span id="placard-item-count">0</span> / 10.
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="printPlacard()" style="padding:7px 14px;background:var(--green);border:none;border-radius:6px;color:#fff;font:inherit;font-size:11px;font-weight:700;cursor:pointer">🖨 Print Placard</button>
+          <button onclick="clearPlacard()" style="padding:7px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:var(--red);font:inherit;font-size:10px;font-weight:700;cursor:pointer">Clear</button>
+        </div>
+      </div>
+    </div>
+    <!-- printable area -->
+    <div id="placard-printable" class="placard-print-area"></div>
+  </div>
+</div></div>
+
+<style>
+/* ── PLACARD STYLES ───────────────────────────────────────────────
+   The .placard-print-area is rendered on-screen AND printed. When
+   printing, we hide every other element on the page so only the
+   placard shows. Black text on white for legibility on paper.
+*/
+.placard-print-area {
+  background: #fff;
+  color: #000;
+  padding: 18px 22px;
+  border-radius: 6px;
+  font-family: Arial, sans-serif;
+  font-size: 11px;
+  line-height: 1.45;
+  max-width: 760px;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+}
+.placard-print-area .ph-header { text-align:center; margin-bottom:10px; padding-bottom:8px; border-bottom:2px solid #000; }
+.placard-print-area .ph-doc { font-size:9px; color:#555; letter-spacing:.08em; }
+.placard-print-area .ph-title { font-size:18px; font-weight:700; margin:4px 0; }
+.placard-print-area .ph-fields { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin:8px 0; }
+.placard-print-area .ph-fields > div { font-size:11px; font-weight:600; }
+.placard-print-area .ph-fields .val { font-weight:400; border-bottom:1px solid #000; padding:0 4px; min-height:18px; display:inline-block; min-width:120px; }
+.placard-print-area .pitem { border:1px solid #000; padding:7px 10px; margin-bottom:6px; page-break-inside:avoid; }
+.placard-print-area .pitem-h { font-weight:700; font-size:12px; margin-bottom:4px; }
+.placard-print-area .pitem-row { display:grid; grid-template-columns:1.7fr 1fr 1fr 1fr; gap:6px; margin-bottom:4px; font-size:10px; }
+.placard-print-area .pitem-row > div { border-bottom:1px solid #000; padding:1px 4px; min-height:18px; }
+.placard-print-area .pitem-row .lbl { border:none; font-size:8px; font-weight:700; color:#444; padding:0 4px; }
+.placard-print-area .pitem-sigs { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:6px; font-size:9px; }
+.placard-print-area .pitem-sigs > div { border-top:1px solid #000; padding-top:2px; font-weight:600; }
+.placard-print-area .pfooter { margin-top:16px; padding-top:10px; border-top:1px solid #000; }
+.placard-print-area .pfooter-row { font-size:11px; font-weight:600; margin-top:18px; }
+.placard-print-area .pfooter-row .sig { border-bottom:1px solid #000; display:inline-block; min-width:280px; min-height:22px; margin-left:6px; }
+
+/* Print: hide everything except the placard */
+@media print {
+  body * { visibility: hidden; }
+  #placard-printable, #placard-printable * { visibility: visible; }
+  #placard-printable { position: absolute; left: 0; top: 0; width: 100%; }
+  .no-print { display: none !important; }
+  .nav, .header, .badges, footer { display:none !important; }
+}
+</style>
 
 <script>
 // ── Production Coordinator Multi-Component Shortage ─────────────────
@@ -576,8 +689,8 @@ function showPage(id, map) {
 }
 
 let cFilter='ALL', ciFilter='ALL', activeBatch=null;
-const PM={cmd:0,check:1,components:2,alerts:3,sync:4};
-function P(id){showPage(id,PM);if(id==='check')renderCheck();if(id==='components')renderComponents();if(id==='alerts')renderAlerts();}
+const PM={cmd:0,check:1,components:2,alerts:3,placard:4,sync:5};
+function P(id){showPage(id,PM);if(id==='check')renderCheck();if(id==='components')renderComponents();if(id==='alerts')renderAlerts();if(id==='placard')renderPlacardForm();}
 
 function getPCStatus(id){ return syncGet(id).pc?.result||''; }
 function isPCBlocked(id){ return syncGet(id).pc?.blocked||false; }
@@ -948,6 +1061,237 @@ setInterval(function() {
   try { reloadBatches(); renderAll(); } catch(err) {}
 }, 30000);
 renderComponents();
+
+// ═════════════════════════════════════════════════════════════════════
+// MATERIAL STAGING PLACARD (LG-010-00)
+// ═════════════════════════════════════════════════════════════════════
+// State for the placard currently being built. Stays in memory only —
+// once printed, the data is saved to localStorage[hoc_placards_v1] for
+// audit/history, and individual SKU↔location pairs are saved to
+// hoc_placard_locations_v1 as suggestions for future placards.
+var currentPlacard = null;  // {batch, item, line, items: [...]}
+
+function loadPlacardLocations(){
+  try { return JSON.parse(localStorage.getItem('hoc_placard_locations_v1') || '{}'); }
+  catch(e){ return {}; }
+}
+function savePlacardLocations(map){
+  try { localStorage.setItem('hoc_placard_locations_v1', JSON.stringify(map)); } catch(e){}
+}
+
+function renderPlacardForm(){
+  // Populate batch dropdown with all non-completed batches
+  var sel = document.getElementById('placard-batch-sel');
+  if(!sel) return;
+  var open = BATCHES.filter(function(b){ return b.status !== 'COMPLETED'; })
+                    .sort(function(a,b){ return String(a.date).localeCompare(String(b.date)); });
+  sel.innerHTML = '<option value="">— select a batch —</option>' + open.map(function(b){
+    return '<option value="'+b.batch+'">'+b.batch+' · Ln'+b.line+' · '+b.desc.slice(0,42)+' · '+(b.date||'')+'</option>';
+  }).join('');
+
+  // Populate SKU datalist from COMPONENTS array (real warehouse SKUs)
+  var skuList = document.getElementById('placard-sku-list');
+  if(skuList && typeof COMPONENTS !== 'undefined'){
+    skuList.innerHTML = COMPONENTS.slice(0, 500).map(function(c){
+      return '<option value="'+c.sku+'">'+c.sku+' — '+(c.desc||'').slice(0,40)+'</option>';
+    }).join('');
+  }
+}
+
+function onPlacardBatchSelect(){
+  var batchId = document.getElementById('placard-batch-sel').value;
+  if(!batchId){
+    document.getElementById('placard-add-row').style.display = 'none';
+    document.getElementById('placard-preview-wrap').style.display = 'none';
+    currentPlacard = null;
+    return;
+  }
+  var b = BATCHES.find(function(x){ return x.batch === batchId; });
+  if(!b){ alert('Batch not found.'); return; }
+  // Initialize a fresh placard with the batch's metadata
+  currentPlacard = {
+    batch: b.batch,
+    item: b.item || '',
+    line: b.line || '',
+    desc: b.desc || '',
+    date: b.date || '',
+    coordinator: '',
+    items: []  // each: {sku, desc, qty_need, location}
+  };
+  document.getElementById('placard-add-row').style.display = 'block';
+  document.getElementById('placard-preview-wrap').style.display = 'block';
+  renderPlacardPreview();
+}
+
+function onPlacardSkuInput(){
+  // When user types/picks a SKU, auto-fill description from COMPONENTS
+  // and populate location datalist with suggestions from past placards.
+  var sku = document.getElementById('placard-item-sku').value.trim();
+  var descEl = document.getElementById('placard-item-desc');
+  var locList = document.getElementById('placard-loc-list');
+  if(typeof COMPONENTS !== 'undefined'){
+    var comp = COMPONENTS.find(function(c){ return c.sku === sku; });
+    if(comp && !descEl.value) descEl.value = comp.desc || '';
+  }
+  // Pull historical locations for this SKU
+  var locs = loadPlacardLocations();
+  var hist = locs[sku] || [];
+  if(locList){
+    locList.innerHTML = hist.map(function(loc){ return '<option value="'+loc+'">'; }).join('');
+  }
+}
+
+function addPlacardItem(){
+  if(!currentPlacard){ alert('Select a batch first.'); return; }
+  if(currentPlacard.items.length >= 10){ alert('Placard supports max 10 items per SOP. Print this one, generate another for additional items.'); return; }
+  var sku  = document.getElementById('placard-item-sku').value.trim();
+  var desc = document.getElementById('placard-item-desc').value.trim();
+  var qty  = parseFloat(document.getElementById('placard-item-qty').value) || 0;
+  var loc  = document.getElementById('placard-item-loc').value.trim();
+  if(!sku){ alert('Enter a SKU.'); return; }
+  currentPlacard.items.push({sku:sku, desc:desc, qty_need:qty, location:loc});
+  // Remember this SKU↔location pair for future suggestions
+  if(loc){
+    var locs = loadPlacardLocations();
+    if(!locs[sku]) locs[sku] = [];
+    if(locs[sku].indexOf(loc) < 0){ locs[sku].unshift(loc); locs[sku] = locs[sku].slice(0, 5); }
+    savePlacardLocations(locs);
+  }
+  // Clear inputs
+  document.getElementById('placard-item-sku').value  = '';
+  document.getElementById('placard-item-desc').value = '';
+  document.getElementById('placard-item-qty').value  = '';
+  document.getElementById('placard-item-loc').value  = '';
+  renderPlacardPreview();
+}
+
+function removePlacardItem(idx){
+  if(!currentPlacard) return;
+  currentPlacard.items.splice(idx, 1);
+  renderPlacardPreview();
+}
+
+function renderPlacardPreview(){
+  var p = currentPlacard;
+  var wrap = document.getElementById('placard-printable');
+  var countEl = document.getElementById('placard-item-count');
+  if(countEl) countEl.textContent = p ? p.items.length : 0;
+  if(!p){ wrap.innerHTML = ''; return; }
+
+  // Header
+  var html = '<div class="ph-header">' +
+    '<div class="ph-doc">LG-010-00 · Production Lines Staging Process</div>' +
+    '<div class="ph-title">Material Staging Placard</div>' +
+    '<div style="font-size:9px;color:#555">Per SOP issued Jan 21, 2026 · Both Material Handler and Line Operator sign each item line</div>' +
+    '</div>';
+
+  // Top fields
+  html += '<div class="ph-fields">' +
+    '<div>ITEM NUMBER: <span class="val">'+(p.item||'&nbsp;')+'</span></div>' +
+    '<div>BATCH NUMBER: <span class="val">'+(p.batch||'&nbsp;')+'</span></div>' +
+    '<div>LINE NUMBER: <span class="val">'+(p.line ? 'Line '+p.line : '&nbsp;')+'</span></div>' +
+    '</div>';
+
+  if(p.desc){
+    html += '<div style="font-size:10px;font-style:italic;color:#444;margin-bottom:6px">Product: '+p.desc+'</div>';
+  }
+
+  // Items 1-10 — render filled slots from data, then blank slots up to 10
+  for(var i = 0; i < 10; i++){
+    var it = p.items[i];
+    html += '<div class="pitem">';
+    if(it){
+      // Remove button (hidden on print via .no-print)
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+        '<div class="pitem-h">Item #'+(i+1)+'</div>' +
+        '<button class="no-print" onclick="removePlacardItem('+i+')" style="font:inherit;font-size:9px;padding:1px 6px;background:transparent;border:1px solid #ccc;color:#888;border-radius:3px;cursor:pointer">remove</button>' +
+        '</div>';
+      html += '<div class="pitem-row">' +
+        '<div>'+(it.sku||'')+(it.desc ? ' — '+it.desc : '')+'</div>' +
+        '<div>'+(it.qty_need ? Number(it.qty_need).toLocaleString() : '&nbsp;')+'</div>' +
+        '<div>&nbsp;</div>' +
+        '<div>&nbsp;</div>' +
+        '</div>';
+      html += '<div class="pitem-row">' +
+        '<div class="lbl">Product Number / Description</div>' +
+        '<div class="lbl">Quantity Needed</div>' +
+        '<div class="lbl">Quantity Picked</div>' +
+        '<div class="lbl">Returned Qty</div>' +
+        '</div>';
+      if(it.location){
+        html += '<div style="font-size:10px;color:#555;margin-bottom:4px">📍 Pick location: <strong>'+it.location+'</strong></div>';
+      }
+    } else {
+      html += '<div class="pitem-h" style="color:#bbb">Item #'+(i+1)+' <span style="font-weight:400;font-size:9px">(empty)</span></div>';
+      html += '<div class="pitem-row">' +
+        '<div>&nbsp;</div><div>&nbsp;</div><div>&nbsp;</div><div>&nbsp;</div>' +
+        '</div>';
+      html += '<div class="pitem-row">' +
+        '<div class="lbl">Product Number / Description</div>' +
+        '<div class="lbl">Quantity Needed</div>' +
+        '<div class="lbl">Quantity Picked</div>' +
+        '<div class="lbl">Returned Qty</div>' +
+        '</div>';
+    }
+    html += '<div class="pitem-sigs">' +
+      '<div>Material Handler Initials</div>' +
+      '<div>Operator Initials</div>' +
+      '<div>Supervisor Initials</div>' +
+      '</div>';
+    html += '</div>';
+  }
+
+  // Footer with Line Operator signature
+  html += '<div class="pfooter">' +
+    '<div class="pfooter-row">Line Operator Signature: <span class="sig"></span></div>' +
+    '<div style="margin-top:14px;font-size:9px;color:#555;display:flex;justify-content:space-between">' +
+      '<span>Date Generated: '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</span>' +
+      '<span>Page 1 of 1</span>' +
+    '</div></div>';
+
+  wrap.innerHTML = html;
+}
+
+function generatePlacard(){
+  // Just a re-render — the placard is "generated" as soon as a batch is selected;
+  // this button forces a fresh preview and scrolls to it.
+  if(!currentPlacard){
+    alert('Select a batch first.');
+    return;
+  }
+  renderPlacardPreview();
+  var preview = document.getElementById('placard-preview-wrap');
+  if(preview) preview.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function clearPlacard(){
+  if(!confirm('Clear this placard? Unsaved item entries will be lost.')) return;
+  currentPlacard = null;
+  document.getElementById('placard-batch-sel').value = '';
+  document.getElementById('placard-add-row').style.display = 'none';
+  document.getElementById('placard-preview-wrap').style.display = 'none';
+}
+
+function printPlacard(){
+  if(!currentPlacard){ alert('Nothing to print.'); return; }
+  if(currentPlacard.items.length === 0){
+    if(!confirm('Placard has no items added — print blank placard for manual fill-in?')) return;
+  }
+  // Save to history before printing (audit trail)
+  try {
+    var history = JSON.parse(localStorage.getItem('hoc_placards_v1') || '[]');
+    history.unshift({
+      ts: new Date().toISOString(),
+      batch: currentPlacard.batch,
+      item: currentPlacard.item,
+      line: currentPlacard.line,
+      items: currentPlacard.items
+    });
+    history = history.slice(0, 100);  // keep last 100
+    localStorage.setItem('hoc_placards_v1', JSON.stringify(history));
+  } catch(e){}
+  window.print();
+}
 </script><script src="hoc_events.js"></script>
 <script>
 // Auto-update header date placeholder
