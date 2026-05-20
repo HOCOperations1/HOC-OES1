@@ -113,6 +113,55 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
 <div class="page active" id="page-upload"><div class="content">
   <div class="sync-bar" id="sync-bar"></div>
 
+  <!-- ── VICINITY LIVE DATALINK ─────────────────────────────────────
+       New in v6.28: replaces manual XLSX uploads by polling Vicinity 4
+       OData endpoints directly. Falls back to file drops below when the
+       server is unreachable (off-network / VPN-down). Status indicator
+       shows connection health; "Pull Now" forces immediate refresh. -->
+  <div class="card" style="margin-bottom:14px;border:1px solid rgba(34,197,94,.3);background:linear-gradient(135deg,rgba(34,197,94,.05),rgba(59,130,246,.04))">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span>🔄 Live Vicinity Datalink <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text3);font-size:9px;margin-left:6px">auto-pulls Production Schedule, Labor Standards, Patch OEE directly from Vicinity 4 OData</span></span>
+      <span id="vic-status-pill" style="font-size:9px;font-weight:700;padding:3px 10px;border-radius:10px;background:rgba(100,116,139,.15);color:var(--text3);border:1px solid rgba(100,116,139,.3)">⊙ Not tested</span>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <div style="font-size:10px;color:var(--text2);flex:1;min-width:200px">
+        Server: <code style="background:var(--bg3);padding:1px 5px;border-radius:3px;font-size:9px" id="vic-server-display">hoc-dts-svr-025:5555</code>
+        <span style="margin-left:10px;color:var(--text3)">Last pull: <span id="vic-last-pull">never</span></span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="nb" onclick="vicProbe()" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);font-size:10px;font-weight:700">⚡ Test Connection</button>
+        <button class="nb" onclick="vicPullSchedule()" style="padding:6px 12px;border-radius:6px;background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.35);font-size:10px;font-weight:700">📊 Pull Schedule</button>
+        <button class="nb" onclick="vicPullLabor()" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);font-size:10px;font-weight:700">⏱ Pull Labor Std</button>
+        <button class="nb" onclick="vicPullOEE()" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);font-size:10px;font-weight:700">📈 Pull Patch OEE</button>
+        <button class="nb" onclick="vicPullAll()" style="padding:6px 12px;border-radius:6px;background:rgba(59,130,246,.15);color:var(--blue);border:1px solid rgba(59,130,246,.35);font-size:10px;font-weight:700">🔄 Pull All Tier 1</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:10px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--text2)">
+        <input type="checkbox" id="vic-autopoll" onchange="vicToggleAutoPoll()"> Auto-poll every 15 min
+      </label>
+      <button class="nb" onclick="vicShowEndpoints()" style="padding:4px 9px;border-radius:5px;border:1px solid var(--border);font-size:9px">View all 32 endpoints</button>
+      <button class="nb" onclick="vicConfigureServer()" style="padding:4px 9px;border-radius:5px;border:1px solid var(--border);font-size:9px;color:var(--text3)">⚙ Change server URL</button>
+      <span id="vic-status-msg" style="margin-left:auto;font-size:10px;color:var(--text3)"></span>
+    </div>
+
+    <div id="vic-endpoints-panel" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);max-height:280px;overflow-y:auto">
+      <table style="width:100%;font-size:10px">
+        <thead><tr>
+          <th style="text-align:left;padding:4px 6px;color:var(--text3);font-weight:700">Key</th>
+          <th style="text-align:left;padding:4px 6px;color:var(--text3);font-weight:700">Tier</th>
+          <th style="text-align:left;padding:4px 6px;color:var(--text3);font-weight:700">Purpose</th>
+          <th style="text-align:right;padding:4px 6px;color:var(--text3);font-weight:700">Records</th>
+          <th style="text-align:left;padding:4px 6px;color:var(--text3);font-weight:700">Last pull</th>
+          <th style="padding:4px 6px"></th>
+        </tr></thead>
+        <tbody id="vic-endpoints-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="zone-grid">
     <!-- Production Tracker -->
     <div>
@@ -179,11 +228,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue)}
       📋 Paste Schedule from Clipboard
       <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text3);font-size:9px">Alternative to file drop — paste cells copied from web Excel</span>
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-      <button class="nb" id="paste-target-pt"  data-target="pt" style="background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.25);padding:5px 10px;border-radius:6px">📊 Production Schedule</button>
+    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-right:2px">target:</span>
+      <button class="nb" id="paste-target-auto" data-target="auto" style="background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.25);padding:5px 10px;border-radius:6px">🤖 Auto-detect</button>
+      <button class="nb" id="paste-target-pt"  data-target="pt" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border)">📊 Production Schedule</button>
       <button class="nb" id="paste-target-pd"  data-target="pd" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border)">🏭 Planning Data (Vicinity)</button>
       <button class="nb" id="paste-target-att" data-target="att" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border)">📈 Case Attainment</button>
-      <button class="nb" id="paste-target-auto" data-target="auto" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border)">🤖 Auto-detect</button>
     </div>
     <textarea id="paste-box" placeholder="In Excel: Ctrl+A to select all on the current month tab, Ctrl+C to copy, then click here and Ctrl+V to paste.
 
@@ -486,7 +536,7 @@ function loadFile(file, zone) {
 // KPI rollup rows above the batch table land in the paste too).
 
 // Track which target the paste should go to
-var PASTE_TARGET = 'pt';
+var PASTE_TARGET = 'auto';
 
 function setPasteTarget(t){
   PASTE_TARGET = t;
@@ -505,13 +555,20 @@ function setPasteTarget(t){
   });
 }
 
-// Wire the picker buttons (after DOM is ready)
-document.addEventListener('DOMContentLoaded', function(){
+// Wire the picker buttons. Inline (not waiting for DOMContentLoaded) because
+// this script tag is at end of body, so all referenced DOM exists already.
+// Also retries on next tick for safety.
+function _wirePickers(){
   ['pt','pd','att','auto'].forEach(function(k){
     var b = document.getElementById('paste-target-'+k);
-    if(b) b.addEventListener('click', function(){ setPasteTarget(k); });
+    if(b && !b._wired){
+      b.addEventListener('click', function(){ setPasteTarget(k); });
+      b._wired = true;
+    }
   });
-});
+}
+_wirePickers();
+setTimeout(_wirePickers, 100);  // safety retry
 
 // Heuristic detector — figures out whether pasted rows look like a
 // schedule (has 'Batch' header + MAIN* values) or Vicinity inventory
@@ -526,8 +583,20 @@ function detectPasteType(rows){
       }
       return false;
     };
+    var hasCI = function(needle){
+      var n = needle.toLowerCase();
+      for(var c=0; c<row.length; c++){
+        if(String(row[c]||'').trim().toLowerCase().indexOf(n) >= 0) return true;
+      }
+      return false;
+    };
     if(has('Batch') && has('Date') && has('Line')) return 'pt';
     if(has('ComponentId') && has('SourceType'))    return 'pd';
+    // Attainment detection — sheet has "Net Req" + "Cumulative Actual"
+    // columns somewhere AND "Plan" + "Actual" together. This is distinctive
+    // enough that no other paste source matches.
+    if(hasCI('net req') && hasCI('cumulative actual') && hasCI('attainment')) return 'att';
+    if(hasCI('House of Cheatham') || hasCI('MFG Plant')) return 'att';
   }
   return null;
 }
@@ -826,10 +895,26 @@ function parseAttainmentPaste(rows, statusEl){
 
     // Validate we found at least one block
     var blockCount = Object.keys(blocks).filter(function(k){ return blocks[k].wks.length > 0; }).length;
+    var headerRowCount = 0;
+    var weekRowCount = 0;
+    var labelCount = 0;
+    for(var di = 0; di < rows.length; di++){
+      if(isHeaderRow(rows[di])) headerRowCount++;
+      if(isWeekRow(rows[di]))   weekRowCount++;
+      if(blockLabelInRow(rows[di])) labelCount++;
+    }
     if(blockCount === 0){
       statusEl.style.color = 'var(--red)';
-      statusEl.textContent = '✗ No attainment blocks found. Make sure you pasted the whole sheet including week rows.';
-      log('err', 'Attainment paste: no blocks parsed');
+      statusEl.textContent = '✗ No attainment blocks found. Diagnostic: ' +
+        rows.length + ' rows · ' +
+        labelCount + ' label rows ("Plant" / "Line N") · ' +
+        headerRowCount + ' header rows (Plan/Actual/Net Req) · ' +
+        weekRowCount + ' week rows (Wk N). ' +
+        (labelCount === 0 ? 'No labels found — re-copy with the Line/Plant labels included.' :
+         headerRowCount === 0 ? 'No header rows found — the columns "Plan / Actual / Net Req" did not appear.' :
+         weekRowCount === 0  ? 'No week rows found — looking for rows starting with "Wk 1", "Wk 2", etc.' :
+         'Labels and headers found but blocks could not be reconciled — labels may be too far from headers (>3 rows).');
+      log('err', 'Attainment paste: no blocks parsed · rows='+rows.length+' labels='+labelCount+' headers='+headerRowCount+' weeks='+weekRowCount);
       return;
     }
 
@@ -1620,7 +1705,219 @@ function clearAllData() {
 // ── Init ──────────────────────────────────────────────────────────────
 renderSyncBar(document.getElementById('sync-bar'));
 setInterval(function(){ renderSyncBar(document.getElementById('sync-bar')); }, 15000);
+
+// ── Vicinity Datalink UI handlers ─────────────────────────────────────
+// These delegate to the VicinityDatalink module loaded below. They update
+// the status pill, the "last pull" timestamp, and post messages to the log.
+function vicSetStatus(state, msg){
+  var pill = document.getElementById('vic-status-pill');
+  var msgEl = document.getElementById('vic-status-msg');
+  if(!pill) return;
+  var map = {
+    ok:    {bg:'rgba(34,197,94,.15)',  fg:'var(--green)', bd:'rgba(34,197,94,.4)',  icon:'● '},
+    bad:   {bg:'rgba(239,68,68,.15)',  fg:'var(--red)',   bd:'rgba(239,68,68,.4)',  icon:'✗ '},
+    busy:  {bg:'rgba(245,158,11,.15)', fg:'var(--amber)', bd:'rgba(245,158,11,.4)', icon:'⟳ '},
+    idle:  {bg:'rgba(100,116,139,.15)',fg:'var(--text3)', bd:'rgba(100,116,139,.3)',icon:'⊙ '}
+  };
+  var s = map[state] || map.idle;
+  pill.style.background = s.bg;
+  pill.style.color = s.fg;
+  pill.style.border = '1px solid ' + s.bd;
+  pill.textContent = s.icon + (msg || state);
+  if(msgEl) msgEl.textContent = msg || '';
+}
+
+function vicRefreshTimestamp(){
+  var el = document.getElementById('vic-last-pull');
+  if(!el) return;
+  try {
+    var meta = window.VicinityDatalink && window.VicinityDatalink.loadMeta();
+    if(!meta) return el.textContent = 'never';
+    // Find most recent success across all endpoints
+    var latest = null;
+    Object.keys(meta).forEach(function(k){
+      var t = meta[k] && meta[k].success_at;
+      if(t && (!latest || t > latest)) latest = t;
+    });
+    if(!latest) return el.textContent = 'never';
+    var d = new Date(latest);
+    var minsAgo = Math.round((Date.now() - d.getTime()) / 60000);
+    el.textContent = minsAgo < 1 ? 'just now' :
+                     minsAgo < 60 ? minsAgo + ' min ago' :
+                     Math.round(minsAgo/60) + ' hr ago';
+    el.title = d.toLocaleString();
+  } catch(e){}
+}
+setInterval(vicRefreshTimestamp, 30000);
+
+async function vicProbe(){
+  if(!window.VicinityDatalink){ vicSetStatus('bad','datalink module not loaded'); return; }
+  vicSetStatus('busy','testing…');
+  var r = await window.VicinityDatalink.probe();
+  if(r.ok){
+    vicSetStatus('ok', 'Connected · ' + r.latency_ms + ' ms');
+    log('info', 'Vicinity probe OK · ' + r.latency_ms + ' ms');
+  } else {
+    vicSetStatus('bad', 'Unreachable · ' + r.error);
+    log('err', 'Vicinity probe failed: ' + r.error);
+  }
+  vicRefreshTimestamp();
+}
+
+async function vicPullSchedule(){
+  if(!window.VicinityDatalink) return;
+  vicSetStatus('busy','pulling Production Schedule…');
+  try {
+    var r = await window.VicinityDatalink.pullProductionSchedule();
+    vicSetStatus('ok', r.records.length + ' batches pulled');
+    log('info', '✓ Vicinity Production Schedule: ' + r.records.length + ' records → hoc_upload_v1');
+    // Mark Production Tracker drop-zone as live-sourced
+    var zone = document.getElementById('zone-pt');
+    var status = document.getElementById('status-pt');
+    if(zone) zone.classList.add('loaded');
+    if(status){ status.textContent = '✓ Live · Vicinity · ' + r.records.length + ' batches'; status.style.color = 'var(--green)'; }
+    if(typeof checkReady === 'function') checkReady();
+  } catch(err){
+    vicSetStatus('bad', 'pull failed · ' + (err.message || err));
+    log('err', 'Vicinity Production Schedule pull: ' + (err.message || err));
+  }
+  vicRefreshTimestamp();
+}
+
+async function vicPullLabor(){
+  if(!window.VicinityDatalink) return;
+  vicSetStatus('busy','pulling Component Std Runtime…');
+  try {
+    var r = await window.VicinityDatalink.pullLaborStandards();
+    var formulaCount = r.saved && r.saved.stats ? r.saved.stats.formulas : 0;
+    vicSetStatus('ok', formulaCount + ' formulas (labor std)');
+    log('info', '✓ Vicinity Labor Std: ' + r.records.length + ' rows, ' + formulaCount + ' formulas → hoc_labor_standards_v1');
+    var zone = document.getElementById('zone-lb');
+    var status = document.getElementById('status-lb');
+    if(zone) zone.classList.add('loaded');
+    if(status){ status.textContent = '✓ Live · Vicinity · ' + formulaCount + ' formulas'; status.style.color = 'var(--green)'; }
+  } catch(err){
+    vicSetStatus('bad', 'labor pull failed · ' + (err.message || err));
+    log('err', 'Vicinity Labor Std pull: ' + (err.message || err));
+  }
+  vicRefreshTimestamp();
+}
+
+async function vicPullOEE(){
+  if(!window.VicinityDatalink) return;
+  vicSetStatus('busy','pulling Patch OEE…');
+  try {
+    var r = await window.VicinityDatalink.pullPatchOEE();
+    vicSetStatus('ok', r.records.length + ' OEE records');
+    log('info', '✓ Vicinity Patch OEE: ' + r.records.length + ' records → hoc_patch_oee_v1');
+  } catch(err){
+    vicSetStatus('bad', 'OEE pull failed · ' + (err.message || err));
+    log('err', 'Vicinity Patch OEE pull: ' + (err.message || err));
+  }
+  vicRefreshTimestamp();
+}
+
+async function vicPullAll(){
+  vicSetStatus('busy','pulling Tier 1 endpoints…');
+  await vicPullSchedule();
+  await vicPullLabor();
+  await vicPullOEE();
+  vicSetStatus('ok','Tier 1 pull complete');
+}
+
+function vicToggleAutoPoll(){
+  if(!window.VicinityDatalink) return;
+  var on = document.getElementById('vic-autopoll').checked;
+  if(on){
+    window.VicinityDatalink.startAutoPoll(15*60*1000);
+    log('info','Vicinity auto-poll started (15 min interval)');
+    vicSetStatus('busy','auto-poll on');
+  } else {
+    window.VicinityDatalink.stopAutoPoll();
+    log('info','Vicinity auto-poll stopped');
+    vicSetStatus('idle','auto-poll off');
+  }
+}
+
+function vicShowEndpoints(){
+  var panel = document.getElementById('vic-endpoints-panel');
+  if(!panel) return;
+  if(panel.style.display === 'none'){
+    panel.style.display = 'block';
+    vicRenderEndpoints();
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function vicRenderEndpoints(){
+  if(!window.VicinityDatalink) return;
+  var tbody = document.getElementById('vic-endpoints-tbody');
+  if(!tbody) return;
+  var meta = window.VicinityDatalink.loadMeta();
+  var rows = Object.entries(window.VicinityDatalink.VIEWS).map(function(entry){
+    var k = entry[0], v = entry[1];
+    var m = meta[k] || {};
+    var last = m.success_at ? new Date(m.success_at).toLocaleString() : '—';
+    var rec = (m.record_count != null) ? m.record_count : '—';
+    var tierColor = v.tier === 1 ? 'var(--green)' : v.tier === 2 ? 'var(--blue)' : v.tier === 3 ? 'var(--amber)' : 'var(--text3)';
+    return '<tr><td style="padding:3px 6px;font-family:ui-monospace,monospace;font-size:9px;color:var(--text)">'+k+'</td>'+
+      '<td style="padding:3px 6px"><span style="color:'+tierColor+';font-weight:700">T'+v.tier+'</span></td>'+
+      '<td style="padding:3px 6px;color:var(--text2);font-size:9px">'+v.purpose+'</td>'+
+      '<td style="padding:3px 6px;text-align:right;font-family:ui-monospace,monospace">'+rec+'</td>'+
+      '<td style="padding:3px 6px;font-size:9px;color:var(--text3)">'+last+'</td>'+
+      '<td style="padding:3px 6px;text-align:right"><button class="nb" onclick="vicPullOne(\''+k+'\')" style="padding:2px 8px;border-radius:4px;border:1px solid var(--border);font-size:9px">Pull</button></td></tr>';
+  }).join('');
+  tbody.innerHTML = rows;
+}
+
+async function vicPullOne(key){
+  if(!window.VicinityDatalink) return;
+  vicSetStatus('busy','pulling '+key+'…');
+  try {
+    var r = await window.VicinityDatalink.pull(key, {top:5000, timeout:15000});
+    vicSetStatus('ok', key+' · '+r.records.length+' records');
+    log('info','✓ Vicinity '+key+': '+r.records.length+' records');
+    vicRenderEndpoints();
+  } catch(err){
+    vicSetStatus('bad', key+' failed · '+(err.message||err));
+    log('err','Vicinity '+key+' pull: '+(err.message||err));
+  }
+  vicRefreshTimestamp();
+}
+
+function vicConfigureServer(){
+  if(!window.VicinityDatalink) return;
+  var current = window.VicinityDatalink.getBaseUrl();
+  var next = prompt('Vicinity OData base URL:', current);
+  if(next == null) return;
+  next = String(next).trim();
+  if(!next){
+    // empty → reset to default
+    try { localStorage.removeItem('hoc_vicinity_base_url'); } catch(e){}
+    document.getElementById('vic-server-display').textContent = window.VicinityDatalink.getBaseUrl().replace(/^https?:\/\//,'').replace(/\/VicinityWeb.*$/,'');
+    log('info','Vicinity server URL reset to default');
+    return;
+  }
+  window.VicinityDatalink.setBaseUrl(next);
+  document.getElementById('vic-server-display').textContent = next.replace(/^https?:\/\//,'').replace(/\/VicinityWeb.*$/,'');
+  log('info','Vicinity server URL set to ' + next);
+}
+
+// Initial status + auto-probe on load (silent — only updates pill)
+setTimeout(function(){
+  if(window.VicinityDatalink){
+    vicRefreshTimestamp();
+    // Try a silent probe to set initial pill state
+    window.VicinityDatalink.probe().then(function(r){
+      if(r.ok) vicSetStatus('ok', 'Connected · ' + r.latency_ms + ' ms');
+      else    vicSetStatus('idle', 'click Test Connection');
+    });
+  }
+}, 500);
+
 </script>
+<script src="vicinity_datalink.js"></script>
 <script src="hoc_events.js"></script>
 </body>
 </html>
